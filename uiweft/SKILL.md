@@ -9,12 +9,12 @@ description: 项目级 UI 规范编排工作流。项目开局时用 UI-UX-Pro-M
 
 ## 分工总览
 
-| 角色 | Skill | 职责 | 位置 |
-|---|---|---|---|
-| 开局定方向 | `ui-ux-pro-max`（UUPM） | 从用户需求生成设计方向（风格/色板/字体/dial），数据驱动，不提问 | `~/.agents/skills/ui-ux-pro-max/` |
-| 营销面生产 | `design-taste-frontend`（Taste） | 落地页、定价页、关于页、博客、作品集、改版 | `~/.kimi-code/skills/taste-skill/` |
-| 产品面生产 | `interface-design` | Dashboard、后台、设置页、表单、数据界面、onboarding | `~/.agents/skills/interface-design/` |
-| 审查（只审不修） | `impeccable` | detector 硬校验 + critique 设计评审 + audit 技术审计 | `~/.agents/skills/impeccable/` |
+| 角色 | Skill 名 | 职责 |
+|---|---|---|
+| 开局定方向 | `ui-ux-pro-max`（UUPM） | 从用户需求生成设计方向（风格/色板/字体/dial），数据驱动，不提问 |
+| 营销面生产 | `design-taste-frontend`（Taste） | 落地页、定价页、关于页、博客、作品集、改版 |
+| 产品面生产 | `interface-design` | Dashboard、后台、设置页、表单、数据界面、onboarding |
+| 审查（只审不修） | `impeccable` | detector 硬校验 + critique 设计评审 + audit 技术审计 |
 
 **唯一规范文件：项目根的 `DESIGN.md`。** 它是所有 skill 的唯一事实源（SSOT）。任何全局视觉决策只许写进 DESIGN.md，不许存在第二份规范文件（特别禁止创建 `.interface-design/system.md`）。
 
@@ -24,6 +24,35 @@ Phase 1 生产：按页面类型路由 → Taste / interface-design / UUPM 兜�
 Phase 2 审查：detector 双层扫描（源码级 + 浏览器引擎）→ critique/audit → 修复回流 → 复评
 迭代期：任何 UI 变更都走 Phase 1 → Phase 2；规范演进只通过修改 DESIGN.md
 ```
+
+---
+
+## 环境探测（每次会话先做，工具无关）
+
+本 skill 不写死任何安装路径——不同 AI 工具（Kimi Code / Claude Code / Codex 等）的技能目录不同。**会话开始时先解析出五个 HOME 变量，之后本文所有命令里的 `$XXX_HOME` 都指解析结果。**
+
+**解析规则（按 skill 名匹配，不是按目录名）**：在候选技能目录下逐层找 `SKILL.md`，读 frontmatter 的 `name:` 字段与目标 skill 名比对——目录名和 skill 名可能不一致（例如目录 `taste-skill/` 里装的 skill 名是 `design-taste-frontend`），按目录名找会漏。
+
+候选技能目录（逐个检查存在的）：
+
+- `~/.agents/skills/`（通用约定）
+- `~/.kimi-code/skills/`（Kimi Code）
+- `~/.claude/skills/`（Claude Code）
+- `~/.codex/skills/`（Codex）
+- 当前项目内的 `.agents/skills/`（项目级安装）
+- 当前工具文档/配置声明的其他技能目录
+
+需要解析的五个 HOME：
+
+| 变量 | 对应 skill | 用途 |
+|---|---|---|
+| `$UUPM_HOME` | `ui-ux-pro-max` | `scripts/search.py` 检索脚本、`data/` 知识库 |
+| `$TASTE_HOME` | `design-taste-frontend` | 营销面生产 |
+| `$ID_HOME` | `interface-design` | 产品面生产 |
+| `$IMP_HOME` | `impeccable` | detector / hook-admin / critique / audit |
+| `$UIWEFT_HOME` | `uiweft`（本 skill 自身） | `scripts/uupm_to_design.py` 桥接脚本 |
+
+解析结果**显式告诉用户一行**（哪个 skill 在哪个路径）；任何一个解析不到，**停下来告知用户缺哪个、请参照项目 README/SETUP 安装**，不要静默跳过或瞎猜路径。
 
 ---
 
@@ -53,7 +82,7 @@ Phase 2 审查：detector 双层扫描（源码级 + 浏览器引擎）→ criti
 ### 0.2 UUPM 生成方案
 
 ```bash
-python3 ~/.agents/skills/ui-ux-pro-max/scripts/search.py "<产品类型> <行业> <风格关键词>" \
+python3 "$UUPM_HOME/scripts/search.py" "<产品类型> <行业> <风格关键词>" \
   --design-system -p "<项目名>" --json \
   --variance <V> --motion <M> --density <D>
 ```
@@ -92,7 +121,7 @@ python3 ~/.agents/skills/ui-ux-pro-max/scripts/search.py "<产品类型> <行业
 用桥接脚本做机械转换（保证格式永远能被 Impeccable detector 解析）：
 
 ```bash
-python3 ~/.kimi-code/skills/uiweft/scripts/uupm_to_design.py uupm_output.json \
+python3 "$UIWEFT_HOME/scripts/uupm_to_design.py" uupm_output.json \
   -o <项目根>/DESIGN.md \
   [--rounded "0px,4px,8px,12px,16px,24px"] \
   [--type-scale "12px,14px,16px,20px,24px,32px,40px,48px,64px"] \
@@ -152,24 +181,25 @@ skill 的内部规则全部是"DESIGN.md 没规定时的默认值"，不是与 D
 ### 2.1 源码级扫描（detector CLI）
 
 ```bash
-node ~/.agents/skills/impeccable/scripts/detector/detect-antipatterns.mjs --json <目标文件或目录>
+node "$IMP_HOME/scripts/detector/detect-antipatterns.mjs" --json <目标文件或目录>
 ```
 
 - `design-system-font / design-system-color / design-system-radius / design-system-font-size` 四条规则会机械比对代码与 DESIGN.md frontmatter 声明的字体/色板/圆角/字号阶梯——**漂移即 finding**，这是整个工作流的硬保障。
 - 同时会报约 60 条 slop/quality 规则（AI 味、排版等）。
 - exit code 2 = 有发现。
+- 不同版本的 Impeccable 目录布局可能不同——`scripts/detector/detect-antipatterns.mjs` 不存在时，在 `$IMP_HOME` 内搜索 `detect-antipatterns.mjs` 的实际位置再用（`hook-admin.mjs` 同理）。
 
 **检测边界（实测确认）**：`design-system-color` 只检查**属性声明处的字面值**（`color: #00C853` 会被抓）；CSS 自定义属性的定义行（`--accent: #xxx`）和 `var()` 引用**不检查**。硬校验抓的是"绕过 token 手写字面值"这类最常见的漂移；token 定义层的正确性靠 0.3 确认和人工把关，不要误以为 detector 全能。
 
 ### 2.2 浏览器引擎扫描（有浏览器时必须跑）
 
-源码级 CLI 只看文本，**看不见计算样式**——间距挤压、实际对比度、触摸目标、CJK 字体回退全部漏检（模拟试点漏过一个 padding 被层叠覆盖的 bug，用户肉眼抓到）。同一 CLI 传 URL 即自动启用浏览器引擎（注意 `engines/browser/detect-url.mjs` 是库不是入口，直接跑它什么都不扫）：
+源码级 CLI 只看文本，**看不见计算样式**——间距挤压、实际对比度、触摸目标、CJK 字体回退全部漏检（试点项目漏过一个 padding 被层叠覆盖的 bug，用户肉眼抓到）。同一 CLI 传 URL 即自动启用浏览器引擎（注意 `engines/browser/detect-url.mjs` 是库不是入口，直接跑它什么都不扫）：
 
 ```bash
-# 首次准备：cd ~/.agents/skills/impeccable && PUPPETEER_SKIP_DOWNLOAD=1 npm i puppeteer
+# 首次准备：cd "$IMP_HOME" && PUPPETEER_SKIP_DOWNLOAD=1 npm i puppeteer
 # 用系统 Chrome，免去下载 Chromium
-export PUPPETEER_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-node ~/.agents/skills/impeccable/scripts/detector/detect-antipatterns.mjs "file://<页面绝对路径>.html"
+export PUPPETEER_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"  # macOS 示例；其他平台换成对应 Chrome/Chromium 可执行文件路径
+node "$IMP_HOME/scripts/detector/detect-antipatterns.mjs" "file://<页面绝对路径>.html"
 ```
 
 并配合截图人工审查**关键接缝处的局部裁切**（不要只看缩略全图——局部间距问题在缩略图里不可见，实测教训）。
@@ -178,7 +208,7 @@ node ~/.agents/skills/impeccable/scripts/detector/detect-antipatterns.mjs "file:
 
 ```bash
 for vp in 390x844 768x1024 1440x900; do
-  node ~/.agents/skills/impeccable/scripts/detector/detect-antipatterns.mjs "file://<页面>.html" --viewport $vp
+  node "$IMP_HOME/scripts/detector/detect-antipatterns.mjs" "file://<页面>.html" --viewport $vp
 done
 ```
 
@@ -195,7 +225,7 @@ detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准�
 - **有值规则**（`overused-font`、`design-system-*` 等）：`hook-admin.mjs ignore-value <rule> "<值>" --reason "..."`。
 - **无值规则**（`cream-palette`、`gray-on-color`、`cramped-padding`、`side-tab` 等）：`ignore-value` 按值写永远匹配不上（实测）。全项目故意决策用 `hook-admin.mjs ignore-rule <id> --reason "..."`；单文件用 `ignore-value <id> "*" --file <路径>`。
 
-**豁免写在哪**：`.impeccable/config.json` 放在**运行 detector / 安装 hook 的那个项目根**——hook 从会话工作目录读配置，不是从被审文件所在目录读（实测踩坑：豁免写进子项目目录，hook 在父目录触发时看不到）。**file 作用域的路径写"相对 hook 工作目录"的形式**（如 `pilots/shiyue/index.html`）；hook 消息里展示的长路径是显示形式不是匹配形式，不确定时两种形式都写进 `files` 数组。
+**豁免写在哪**：`.impeccable/config.json` 放在**运行 detector / 安装 hook 的那个项目根**——hook 从会话工作目录读配置，不是从被审文件所在目录读（实测踩坑：豁免写进子项目目录，hook 在父目录触发时看不到）。**file 作用域的路径写"相对 hook 工作目录"的形式**；hook 消息里展示的长路径是显示形式不是匹配形式，不确定时两种形式都写进 `files` 数组。
 
 ### 2.4 设计评审与技术审计
 
@@ -228,15 +258,15 @@ detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准�
 4. 审查不通过（detector 有 design-system-* finding 或 critique 有 P0）**不交付**。
 5. DESIGN.md 的 frontmatter 格式不许手写改动结构（嵌套 map、无列表、字符串加引号）——detector 的解析器只吃这个子集。加颜色加字号随便加，结构别动。
 
-## 路径速查
+## 资源速查（路径 = 环境探测节解析出的 HOME 变量）
 
-| 用途 | 路径 |
+| 用途 | 位置 |
 |---|---|
-| UUPM 检索脚本 | `~/.agents/skills/ui-ux-pro-max/scripts/search.py` |
-| UUPM 知识库数据 | `~/.agents/skills/ui-ux-pro-max/data/` |
-| 桥接脚本（UUPM JSON → DESIGN.md） | `~/.kimi-code/skills/uiweft/scripts/uupm_to_design.py` |
-| Impeccable detector CLI（源码级 + 浏览器引擎共用） | `~/.agents/skills/impeccable/scripts/detector/detect-antipatterns.mjs` |
-| Impeccable 豁免管理 | `~/.agents/skills/impeccable/scripts/hook-admin.mjs` |
-| Taste skill | `~/.kimi-code/skills/taste-skill/SKILL.md` |
-| interface-design skill | `~/.agents/skills/interface-design/SKILL.md` |
-| Impeccable skill | `~/.agents/skills/impeccable/SKILL.md` |
+| UUPM 检索脚本 | `$UUPM_HOME/scripts/search.py` |
+| UUPM 知识库数据 | `$UUPM_HOME/data/` |
+| 桥接脚本（UUPM JSON → DESIGN.md） | `$UIWEFT_HOME/scripts/uupm_to_design.py` |
+| Impeccable detector CLI（源码级 + 浏览器引擎共用） | `$IMP_HOME/scripts/detector/detect-antipatterns.mjs` |
+| Impeccable 豁免管理 | `$IMP_HOME/scripts/hook-admin.mjs` |
+| Taste skill 完整能力 | `$TASTE_HOME/SKILL.md` |
+| interface-design skill 完整能力 | `$ID_HOME/SKILL.md` |
+| Impeccable skill 完整能力 | `$IMP_HOME/SKILL.md` |
