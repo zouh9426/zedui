@@ -1,11 +1,11 @@
-# UIweft Setup Guide Prompt
+# zedui Setup Guide Prompt
 
 > **Usage**: copy the **entire content** of this file (starting from the divider below) and paste it to your AI agent (Kimi Code / Claude Code / Codex, etc.). It will automatically complete the full installation and self-check.
 > 中文版：[SETUP.md](SETUP.md)
 
 ---
 
-You are an installation assistant. Please help me install **UIweft** (the UI-spec orchestration skill) and its four companion skills. Follow the steps below; after each step, tell me the result. If any step fails, stop and report — do not skip anything.
+You are an installation assistant. Please help me install **zedui** (the UI-spec orchestration skill) and its four companion skills. Follow the steps below; after each step, tell me the result. If any step fails, stop and report — do not skip anything.
 
 ## Step 1: Identify the environment
 
@@ -24,7 +24,7 @@ Walk the skills directory looking for `SKILL.md` files, read the `name:` field i
 
 | Skill name | Purpose |
 |---|---|
-| `uiweft` | The orchestration layer itself |
+| `zedui` | The orchestration layer itself |
 | `ui-ux-pro-max` | Kickoff & direction |
 | `design-taste-frontend` | Marketing-facing production |
 | `interface-design` | Product-facing production |
@@ -34,7 +34,7 @@ Report a list of what's present / missing.
 
 ## Step 3: Install the missing skills
 
-- **uiweft**: `git clone https://github.com/zouh9426/uiweft` into a temp directory, then copy its `uiweft/` subdirectory into the skills directory.
+- **zedui**: `git clone https://github.com/zouh9426/zedui` into a temp directory, then copy its `zedui/` subdirectory into the skills directory.
 - **The four companion skills**: install each into the same skills directory following its upstream repo's README:
   - `ui-ux-pro-max` → https://github.com/nextlevelbuilder/ui-ux-pro-max-skill
   - `design-taste-frontend` → https://github.com/Leonxlnx/taste-skill
@@ -59,6 +59,6 @@ Run the following in order (using the actual paths resolved in Steps 2/3):
 
 1. `python3 <ui-ux-pro-max>/scripts/search.py "dashboard" --domain style` — should return style suggestions rather than an error
 2. `node <impeccable>/scripts/detector/detect-antipatterns.mjs --help` (if that path doesn't exist, search inside the impeccable directory for the actual location of `detect-antipatterns.mjs`) — should print usage info
-3. `python3 <uiweft>/scripts/uupm_to_design.py --help` — should print usage info
+3. `python3 <zedui>/scripts/uupm_to_design.py --help` — should print usage info
 
-When all three pass, report back to me: the install paths of the five skills, the Chrome path (if configured), and a confirmation sentence — "UIweft installation complete. Say 'use uiweft for UI' in your project to get started."
+When all three pass, report back to me: the install paths of the five skills, the Chrome path (if configured), and a confirmation sentence — "zedui installation complete. Say 'use zedui for UI' in your project to get started."

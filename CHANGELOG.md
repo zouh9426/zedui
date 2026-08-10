@@ -2,6 +2,12 @@
 
 本项目所有值得记录的变更都写在这里。格式约定：每条目回答两个问题——**改了什么**、**为什么这么改（决策理由）**。
 
+## [0.3.0] - 2026-08-11
+
+品牌改名：skill 由 uiweft 更名为 zedui。
+
+- **目录 `uiweft/` 改名 `zedui/`，frontmatter `name: uiweft` 改为 `name: zedui`**，SKILL.md 环境变量 `$UIWEFT_HOME` 同步改为 `$ZEDUI_HOME`，AGENTS.md / README / SETUP 及对应 .en 英文版全部文档同步替换。理由：品牌改名；历史 CHANGELOG 条目保留原名不动，不做篡改。
+
 ## [0.2.0] - 2026-08-07
 
 开源发布 + 工具无关化改造。

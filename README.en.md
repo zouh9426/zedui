@@ -1,11 +1,11 @@
-# UIweft
+# zedui
 
-> weft = 纬线。四个独立的 UI skill 是纬线，`DESIGN.md` 是经纱——UIweft 把它们织成一匹不漂移的布。
-> (weft: the crosswise threads in weaving. The four independent UI skills are the wefts, and `DESIGN.md` is the warp — UIweft weaves them into a cloth that doesn't drift.)
+> weft = 纬线。四个独立的 UI skill 是纬线，`DESIGN.md` 是经纱——zedui 把它们织成一匹不漂移的布。
+> (weft: the crosswise threads in weaving. The four independent UI skills are the wefts, and `DESIGN.md` is the warp — zedui weaves them into a cloth that doesn't drift.)
 
 [中文](README.md) · [Setup guide prompt](SETUP.md) · [Changelog](CHANGELOG.md)
 
-UIweft is a **workflow orchestration skill**: it doesn't do design or review itself. Instead, it chains four mature UI skills into a spec-constrained pipeline, solving the biggest pain point of multi-skill collaboration — **each skill invents its own spec file, so outputs inevitably drift**.
+zedui is a **workflow orchestration skill**: it doesn't do design or review itself. Instead, it chains four mature UI skills into a spec-constrained pipeline, solving the biggest pain point of multi-skill collaboration — **each skill invents its own spec file, so outputs inevitably drift**.
 
 Works with any AI coding tool that supports SKILL.md skills (Kimi Code / Claude Code / Codex, etc.).
 
@@ -43,20 +43,20 @@ Phase 2 审查：Impeccable detector 双层扫描（源码 + 浏览器引擎）�
 
 **Recommended (let your AI do it)**: open [SETUP.md](SETUP.md) and paste the entire file into your AI agent — it will check dependencies, install the five skills, configure the browser engine, and run self-checks automatically.
 
-**Manual**: copy this repo's `uiweft/` directory into your AI tool's skills directory (e.g. `~/.agents/skills/`, `~/.claude/skills/`, `~/.kimi-code/skills/`, `~/.codex/skills/`) and install the four companion skills per the table above. Skills recognize each other by the `name:` field in their frontmatter — directory names and tools don't matter.
+**Manual**: copy this repo's `zedui/` directory into your AI tool's skills directory (e.g. `~/.agents/skills/`, `~/.claude/skills/`, `~/.kimi-code/skills/`, `~/.codex/skills/`) and install the four companion skills per the table above. Skills recognize each other by the `name:` field in their frontmatter — directory names and tools don't matter.
 
 ## Usage
 
 Once installed, trigger it in your project by telling your AI something like:
 
-> "Use uiweft to build the UI for this project" / "Redesign this landing page following the uiweft flow"
+> "Use zedui to build the UI for this project" / "Redesign this landing page following the zedui flow"
 
 The first use enters Phase 0: the AI asks you 3–5 questions, proposes a design direction, and generates `DESIGN.md` once you confirm. After that, production and review for every page run through the pipeline automatically.
 
 ## Repository structure
 
 ```
-uiweft/
+zedui/
 ├── SKILL.md                    ← 编排工作流本体（工具无关，运行时探测路径）
 └── scripts/uupm_to_design.py   ← UUPM JSON → DESIGN.md 桥接脚本（纯标准库）
 README.md / README.en.md        ← 中英双门面

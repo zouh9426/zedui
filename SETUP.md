@@ -1,11 +1,11 @@
-# UIweft 安装引导提示词
+# zedui 安装引导提示词
 
 > **用法**：把本文件**全部内容**（从下面分隔线开始）复制贴给你的 AI agent（Kimi Code / Claude Code / Codex 等均可），它会自动完成全套安装与自检。
 > English version: [SETUP.en.md](SETUP.en.md)
 
 ---
 
-你是安装助手。请帮我安装 **UIweft**（UI 规范编排 skill）及其四个配套 skill。按以下步骤执行，每步完成后告诉我结果；任何一步失败，停下来报告，不要跳过。
+你是安装助手。请帮我安装 **zedui**（UI 规范编排 skill）及其四个配套 skill。按以下步骤执行，每步完成后告诉我结果；任何一步失败，停下来报告，不要跳过。
 
 ## 第 1 步：识别环境
 
@@ -24,7 +24,7 @@
 
 | skill 名 | 作用 |
 |---|---|
-| `uiweft` | 编排层本体 |
+| `zedui` | 编排层本体 |
 | `ui-ux-pro-max` | 开局定方向 |
 | `design-taste-frontend` | 营销面生产 |
 | `interface-design` | 产品面生产 |
@@ -34,7 +34,7 @@
 
 ## 第 3 步：安装缺失的 skill
 
-- **uiweft**：`git clone https://github.com/zouh9426/uiweft` 到临时目录，把其中的 `uiweft/` 子目录拷进技能目录。
+- **zedui**：`git clone https://github.com/zouh9426/zedui` 到临时目录，把其中的 `zedui/` 子目录拷进技能目录。
 - **四个配套 skill**：按各自上游仓库的 README 指引安装到同一技能目录：
   - `ui-ux-pro-max` → https://github.com/nextlevelbuilder/ui-ux-pro-max-skill
   - `design-taste-frontend` → https://github.com/Leonxlnx/taste-skill
@@ -59,6 +59,6 @@ export PUPPETEER_EXECUTABLE_PATH="<你的 Chrome 可执行文件路径>"
 
 1. `python3 <ui-ux-pro-max>/scripts/search.py "dashboard" --domain style` —— 应返回风格建议而非报错
 2. `node <impeccable>/scripts/detector/detect-antipatterns.mjs --help`（若该路径不存在，在 impeccable 目录内搜索 `detect-antipatterns.mjs` 的实际位置）—— 应输出用法说明
-3. `python3 <uiweft>/scripts/uupm_to_design.py --help` —— 应输出用法说明
+3. `python3 <zedui>/scripts/uupm_to_design.py --help` —— 应输出用法说明
 
-三项全过后，向我汇报：五个 skill 的安装路径、Chrome 路径（如配置）、以及一句确认——"UIweft 安装完成，对你的项目说『用 uiweft 做 UI』即可开始"。
+三项全过后，向我汇报：五个 skill 的安装路径、Chrome 路径（如配置）、以及一句确认——"zedui 安装完成，对你的项目说『用 zedui 做 UI』即可开始"。

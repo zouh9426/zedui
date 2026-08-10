@@ -1,11 +1,11 @@
-# AGENTS.md — UIweft 项目级规则
+# AGENTS.md — zedui 项目级规则
 
-本文件约束**本仓库的维护者 agent**（迭代 uiweft skill 本身时的纪律）。`uiweft/SKILL.md` 约束的是**使用方 agent**（在用户项目里跑 UI 工作流时的行为），两者别混。
+本文件约束**本仓库的维护者 agent**（迭代 zedui skill 本身时的纪律）。`zedui/SKILL.md` 约束的是**使用方 agent**（在用户项目里跑 UI 工作流时的行为），两者别混。
 
 ## 仓库性质
 
-- 公开开源仓库（GitHub: `uiweft`），MIT 协议，Copyright (c) 2026 zouh9426。
-- 仓库内容：`uiweft/`（skill 本体：SKILL.md + scripts/）、双语文档（README / SETUP）、CHANGELOG、LICENSE、CI。
+- 公开开源仓库（GitHub: `zedui`），MIT 协议，Copyright (c) 2026 zouh9426。
+- 仓库内容：`zedui/`（skill 本体：SKILL.md + scripts/）、双语文档（README / SETUP）、CHANGELOG、LICENSE、CI。
 - 面向所有 AI 编码工具（Kimi Code / Claude Code / Codex 等），**不得偏向任何单一工具**。
 
 ## 红线
@@ -23,8 +23,8 @@
 
 ## 本机部署位提醒（仅维护者本机适用，不进任何仓库文件）
 
-`~/.kimi-code/skills/uiweft/` 是**真实目录不是软链接**（Kimi Code 加载器不跟随符号链接，踩过坑）。改完仓库源码后，必须手动把 `uiweft/` 拷贝过去才在本机生效：
+`~/.kimi-code/skills/zedui/` 是**真实目录不是软链接**（Kimi Code 加载器不跟随符号链接，踩过坑）。改完仓库源码后，必须手动把 `zedui/` 拷贝过去才在本机生效：
 
 ```bash
-rsync -a --delete uiweft/ ~/.kimi-code/skills/uiweft/
+rsync -a --delete zedui/ ~/.kimi-code/skills/zedui/
 ```

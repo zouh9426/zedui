@@ -1,9 +1,9 @@
 ---
-name: uiweft
+name: zedui
 description: 项目级 UI 规范编排工作流。项目开局时用 UI-UX-Pro-Max 定方向并生成唯一规范文件 DESIGN.md；随后按页面类型路由到 design-taste-frontend（营销/落地页）或 interface-design（产品页/后台/仪表盘）；每个页面完成后用 Impeccable 做审查（detector 硬校验 + critique 评审 + audit 审计），修复回流给生产者。Use when starting a new project's UI design, establishing or evolving DESIGN.md, building any UI page, or auditing UI consistency.
 ---
 
-# UIweft — UI 规范编排工作流
+# zedui — UI 规范编排工作流
 
 你不是在"做 UI"，你是在**编排四个 UI skill 的工作流**。四个 skill 各自的完整能力读它们自己的 SKILL.md，本文件只定义串联逻辑。
 
@@ -50,7 +50,7 @@ Phase 2 审查：detector 双层扫描（源码级 + 浏览器引擎）→ criti
 | `$TASTE_HOME` | `design-taste-frontend` | 营销面生产 |
 | `$ID_HOME` | `interface-design` | 产品面生产 |
 | `$IMP_HOME` | `impeccable` | detector / hook-admin / critique / audit |
-| `$UIWEFT_HOME` | `uiweft`（本 skill 自身） | `scripts/uupm_to_design.py` 桥接脚本 |
+| `$ZEDUI_HOME` | `zedui`（本 skill 自身） | `scripts/uupm_to_design.py` 桥接脚本 |
 
 解析结果**显式告诉用户一行**（哪个 skill 在哪个路径）；任何一个解析不到，**停下来告知用户缺哪个、请参照项目 README/SETUP 安装**，不要静默跳过或瞎猜路径。
 
@@ -121,7 +121,7 @@ python3 "$UUPM_HOME/scripts/search.py" "<产品类型> <行业> <风格关键词
 用桥接脚本做机械转换（保证格式永远能被 Impeccable detector 解析）：
 
 ```bash
-python3 "$UIWEFT_HOME/scripts/uupm_to_design.py" uupm_output.json \
+python3 "$ZEDUI_HOME/scripts/uupm_to_design.py" uupm_output.json \
   -o <项目根>/DESIGN.md \
   [--rounded "0px,4px,8px,12px,16px,24px"] \
   [--type-scale "12px,14px,16px,20px,24px,32px,40px,48px,64px"] \
@@ -264,7 +264,7 @@ detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准�
 |---|---|
 | UUPM 检索脚本 | `$UUPM_HOME/scripts/search.py` |
 | UUPM 知识库数据 | `$UUPM_HOME/data/` |
-| 桥接脚本（UUPM JSON → DESIGN.md） | `$UIWEFT_HOME/scripts/uupm_to_design.py` |
+| 桥接脚本（UUPM JSON → DESIGN.md） | `$ZEDUI_HOME/scripts/uupm_to_design.py` |
 | Impeccable detector CLI（源码级 + 浏览器引擎共用） | `$IMP_HOME/scripts/detector/detect-antipatterns.mjs` |
 | Impeccable 豁免管理 | `$IMP_HOME/scripts/hook-admin.mjs` |
 | Taste skill 完整能力 | `$TASTE_HOME/SKILL.md` |
