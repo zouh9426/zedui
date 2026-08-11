@@ -10,11 +10,21 @@ Pure standard library (stdlib only).
 Usage:
     uupm_to_design.py INPUT [-o OUTPUT] [--rounded "0px,4px,8px,12px,16px,24px"]
                             [--type-scale "12px,14px,16px,20px,24px,32px,40px,48px,64px"]
-                            [--marketing-dials V,M,D] [--product-dials V,M,D] [--force]
+                            [--marketing-dials V,M,D] [--product-dials V,M,D]
+                            [--tokens-css TOKENS_CSS] [--force]
+
+    uupm_to_design.py --from-design DESIGN.md --tokens-css TOKENS_CSS
 
     INPUT    path to the design-system JSON, or ``-`` to read from stdin.
     -o       output markdown path (default: ./DESIGN.md); refuses to overwrite
              an existing file unless --force is given (exit code 1).
+    --tokens-css   also emit a generated CSS-custom-properties token file
+                   (colors/typography/type scale/rounded/spacing). This file is
+                   a build artifact: always overwritten, never hand-edited.
+    --from-design  read the frontmatter of an existing DESIGN.md (the SSOT)
+                   instead of a UUPM JSON; requires --tokens-css and emits only
+                   the token file. This is the Phase 3 path: edit the DESIGN.md
+                   frontmatter, regenerate tokens.css from it.
 """
 
 import argparse
@@ -397,6 +407,115 @@ def build_body(ds, rounded_scale, type_scale, spacing_scale, mkt, prod, prod_lab
 
 
 # --------------------------------------------------------------------------
+# tokens.css generation (DESIGN.md frontmatter -> CSS custom properties)
+# --------------------------------------------------------------------------
+
+def _css_var_name(key):
+    """frontmatter key -> CSS var name: underscores become hyphens."""
+    return "--" + str(key).strip().replace("_", "-")
+
+
+def build_tokens_css(colors, heading_font, body_font, type_scale, rounded_scale,
+                     spacing_scale, source_desc):
+    """Render the token layer as CSS custom properties on :root.
+
+    Pure derivation: every value comes from the DESIGN.md frontmatter maps;
+    nothing is invented here. Empty/TBD values are skipped.
+    """
+    def _ok(v):
+        return v is not None and str(v).strip() not in ("", "TBD")
+
+    lines = [
+        "/* -----------------------------------------------------------------------",
+        " * GENERATED FILE — DO NOT EDIT BY HAND.",
+        " * Single source of truth: DESIGN.md frontmatter (%s)." % source_desc,
+        " * Regenerate after any frontmatter change:",
+        " *   uupm_to_design.py --from-design DESIGN.md --tokens-css <this file>",
+        " * Usage invariant: component code references these variables; literal",
+        " * values belong only in the token definition layer (they are drift).",
+        " * ----------------------------------------------------------------------- */",
+        ":root {",
+    ]
+    for k in _color_keys(colors):
+        v = colors.get(k)
+        if _ok(v):
+            lines.append("  %s: %s;" % (_css_var_name(k), str(v).strip()))
+    if _ok(heading_font):
+        lines.append("  --font-heading: %s;" % str(heading_font).strip())
+    if _ok(body_font):
+        lines.append("  --font-body: %s;" % str(body_font).strip())
+    for tname, tval in type_scale.items():
+        if _ok(tval):
+            lines.append("  --text-%s: %s;" % (tname, str(tval).strip()))
+    for rname, rval in rounded_scale.items():
+        if _ok(rval):
+            lines.append("  --radius-%s: %s;" % (rname, str(rval).strip()))
+    for sname, sval in spacing_scale.items():
+        if _ok(sval):
+            lines.append("  --space-%s: %s;" % (sname, str(sval).strip()))
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def _unquote(val):
+    """Unquote a double-quoted scalar from the minimal-YAML frontmatter."""
+    val = val.strip()
+    if len(val) >= 2 and val[0] == '"' and val[-1] == '"':
+        val = val[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    return val
+
+
+def parse_design_frontmatter(text):
+    """Parse the restricted-YAML frontmatter this script emits (nested maps,
+    2-space indents, double-quoted scalars, no lists) into nested dicts.
+
+    Raises ValueError on anything outside the subset.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        raise ValueError("no frontmatter block (expected '---' on line 1)")
+    end = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end = i
+            break
+    if end is None:
+        raise ValueError("frontmatter block not closed (missing second '---')")
+    root = {}
+    stack = [(-1, root)]  # (indent, container)
+    for raw in lines[1:end]:
+        if not raw.strip():
+            continue
+        if raw.lstrip() != raw and not raw.startswith(" "):
+            raise ValueError("tabs are not supported in frontmatter: %r" % raw)
+        indent = len(raw) - len(raw.lstrip(" "))
+        stripped = raw.strip()
+        if ":" not in stripped:
+            raise ValueError("unsupported frontmatter line: %r" % raw)
+        key, _, val = stripped.partition(":")
+        key = key.strip()
+        val = val.strip()
+        while len(stack) > 1 and indent <= stack[-1][0]:
+            stack.pop()
+        if indent <= stack[-1][0]:
+            raise ValueError("bad indentation near line: %r" % raw)
+        parent = stack[-1][1]
+        if val == "":
+            child = {}
+            parent[key] = child
+            stack.append((indent, child))
+        else:
+            parent[key] = _unquote(val)
+    return root
+
+
+def write_tokens_css(path, content):
+    """Tokens file is a generated artifact: always overwritten."""
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(content)
+
+
+# --------------------------------------------------------------------------
 # main
 # --------------------------------------------------------------------------
 
@@ -415,10 +534,13 @@ def main(argv=None):
             "Stdlib only."
         ),
     )
-    parser.add_argument("input", metavar="INPUT",
+    parser.add_argument("input", metavar="INPUT", nargs="?",
                         help="path to the design-system JSON, or '-' to read from stdin")
     parser.add_argument("-o", "--output", default="DESIGN.md",
                         help="output markdown path (default: ./DESIGN.md)")
+    parser.add_argument("--from-design", default=None, metavar="DESIGN_MD",
+                        help="read tokens from an existing DESIGN.md frontmatter instead of "
+                             "a UUPM JSON; requires --tokens-css, emits only the token file")
     parser.add_argument("--rounded", default=DEFAULT_ROUNDED, metavar="LIST",
                         help="comma-separated corner-radius steps (default: %s)" % DEFAULT_ROUNDED)
     parser.add_argument("--type-scale", default=DEFAULT_TYPE_SCALE, metavar="LIST",
@@ -429,7 +551,43 @@ def main(argv=None):
                         help="product dials: variance,motion,density (1-10 each)")
     parser.add_argument("--force", action="store_true",
                         help="overwrite the output file if it already exists")
+    parser.add_argument("--tokens-css", default=None, metavar="PATH",
+                        help="also emit a generated CSS-custom-properties token file "
+                             "(always overwritten, never hand-edited)")
     args = parser.parse_args(argv)
+
+    # ---- --from-design mode: DESIGN.md frontmatter -> tokens.css only ----
+    if args.from_design is not None:
+        if not args.tokens_css:
+            print("error: --from-design requires --tokens-css", file=sys.stderr)
+            sys.exit(1)
+        try:
+            with open(args.from_design, "r", encoding="utf-8") as fh:
+                design_text = fh.read()
+        except OSError as e:
+            print("error: cannot read DESIGN.md: %s" % e, file=sys.stderr)
+            sys.exit(1)
+        try:
+            fm = parse_design_frontmatter(design_text)
+        except ValueError as e:
+            print("error: cannot parse frontmatter: %s" % e, file=sys.stderr)
+            sys.exit(1)
+        typo = fm.get("typography") or {}
+        css = build_tokens_css(
+            fm.get("colors") or {},
+            (typo.get("heading") or {}).get("fontFamily"),
+            (typo.get("body") or {}).get("fontFamily"),
+            typo.get("scale") or {},
+            fm.get("rounded") or {},
+            fm.get("spacing") or {},
+            args.from_design,
+        )
+        write_tokens_css(args.tokens_css, css)
+        return
+
+    if args.input is None:
+        print("error: INPUT is required (or use --from-design)", file=sys.stderr)
+        sys.exit(1)
 
     if args.input == "-":
         raw = sys.stdin.read()
@@ -474,6 +632,19 @@ def main(argv=None):
 
     with open(args.output, "w", encoding="utf-8") as fh:
         fh.write(document)
+
+    if args.tokens_css:
+        typo = ds.get("typography") or {}
+        css = build_tokens_css(
+            ds.get("colors") or {},
+            typo.get("heading"),
+            typo.get("body"),
+            type_scale,
+            rounded_scale,
+            spacing_scale,
+            args.output,
+        )
+        write_tokens_css(args.tokens_css, css)
 
 
 if __name__ == "__main__":

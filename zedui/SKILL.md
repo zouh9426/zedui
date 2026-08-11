@@ -18,6 +18,8 @@ description: 项目级 UI 规范编排工作流。项目开局时用 UI-UX-Pro-M
 
 **唯一规范文件：项目根的 `DESIGN.md`。** 它是所有 skill 的唯一事实源（SSOT）。任何全局视觉决策只许写进 DESIGN.md，不许存在第二份规范文件（特别禁止创建 `.interface-design/system.md`）。
 
+**token 定义层：`tokens.css` 由桥接脚本从 DESIGN.md frontmatter 机械生成（`--tokens-css` / `--from-design`），是生成物，永不允许手改。** 颜色、字体、字号、圆角、间距的唯一定义点是 DESIGN.md frontmatter；tokens.css 只是它在代码侧的投影。
+
 ```
 Phase 0 开局：提问 → UUPM 出方案 → 用户确认 → 桥接脚本生成 DESIGN.md
 Phase 1 生产：按页面类型路由 → Taste / interface-design / UUPM 兜底，全部以 DESIGN.md 为规范
@@ -70,7 +72,7 @@ Phase 2 审查：detector 双层扫描（源码级 + 浏览器引擎）→ criti
 2. **翻译而非重定**：把旧文档的全局决策（色板、字体、圆角、字号、间距、明暗支持）逐项翻译成 UUPM JSON 结构（结构见 `$ZEDUI_HOME/scripts/uupm_to_design.py` 头部注释），**禁止发明新 token、禁止改动任何已有值**。旧文档没覆盖的字段（dial 三档、spacing 等）按默认/建议值给出并标注"新增建议，待确认"。
 3. **四确认项照旧**：0.3 的次级文字色 / 中性墨色 / 暗色 token / CJK 字体栈逐项检查，缺则补——旧规范最常缺的正是这四项。
 4. **用户确认（硬性卡点，同 0.3）**：翻译结果 + 建议项摊开确认；旧规范文档的处置（归档 / 保留为细则文档并在 DESIGN.md 建立引用）一并裁决——**禁止静默双规范并存**。
-5. **落盘**：用桥接脚本从翻译后的 JSON 生成 DESIGN.md，格式由脚本保证可解析；覆盖既有 DESIGN.md 用 `--force`（指针内容已完成历史使命）。
+5. **落盘**：用桥接脚本从翻译后的 JSON 生成 DESIGN.md + tokens.css（`--tokens-css`），格式由脚本保证可解析；覆盖既有 DESIGN.md 用 `--force`（指针内容已完成历史使命）。tokens.css 接入样式入口，旧 `:root` 手写 token 块替换为别名映射。
 6. **验证**：跑 2.1 detector 确认 frontmatter 可解析、`design-system-*` 四条规则能正常比对；对既有代码的漂移 finding 只报告，修复走 Phase 1/2 正常回流。
 
 ### 0.1 提问（编排层做，UUPM 不会提问）
@@ -131,17 +133,18 @@ python3 "$UUPM_HOME/scripts/search.py" "<产品类型> <行业> <风格关键词
 
 ### 0.4 落盘 DESIGN.md
 
-用桥接脚本做机械转换（保证格式永远能被 Impeccable detector 解析）：
+用桥接脚本做机械转换（保证格式永远能被 Impeccable detector 解析），同时生成代码侧 token 定义层：
 
 ```bash
 python3 "$ZEDUI_HOME/scripts/uupm_to_design.py" uupm_output.json \
   -o <项目根>/DESIGN.md \
+  --tokens-css <项目样式目录>/tokens.css \
   [--rounded "0px,4px,8px,12px,16px,24px"] \
   [--type-scale "12px,14px,16px,20px,24px,32px,40px,48px,64px"] \
   [--marketing-dials V,M,D] [--product-dials V,M,D]
 ```
 
-DESIGN.md 生成后，Phase 0 完成。之后任何页面才可以动工。
+`tokens.css` 落盘后接入项目样式入口（如全局 CSS 里 `@import`/拷贝引入），项目若已有手写 `:root` token 块，用它替换并把旧变量名映射为别名指向新变量（防引用断裂）。DESIGN.md + tokens.css 生成后，Phase 0 完成。之后任何页面才可以动工。
 
 ---
 
@@ -166,7 +169,8 @@ Taste 会主动拒绝产品型页面、interface-design 会主动拒绝营销页
 2. dial 三档用 DESIGN.md 里记录的 **marketing 组**。
 3. 有图片生成能力时按你自己的优先级链生成真实素材。
 4. **响应式是交付硬指标**：每个多列布局都必须带 `<768px` 的显式单列坍缩（你自己 §3.E/§7 的规则），交付清单里的 Mobile collapse 项不许放水。
-5. 遵守你自己的 Pre-Flight 清单交付。
+5. 颜色/字号/圆角/间距一律引用 tokens.css 变量，不写字面值（硬性规则 6）。
+6. 遵守你自己的 Pre-Flight 清单交付。
 
 ### 调用 interface-design 时的约束指令（必须包含）
 
@@ -175,7 +179,8 @@ Taste 会主动拒绝产品型页面、interface-design 会主动拒绝营销页
 3. 构建中沉淀的新组件规范（测量值、用法），**追加到 DESIGN.md 的 `## Components` 章节**（格式：组件名 / 关键测量值 / 何时用），复用 ≥2 次才收录。全局 token 的变更不许写这里——全局变更走"规范演进"流程（见 Phase 3）。
 4. dial 三档用 DESIGN.md 里记录的 **product 组**。
 5. **响应式与触达**：所有交互元素触达面积 ≥44×44px（你自己的 Polish 规则）；窄视口下 sidebar/多栏布局要有显式降级方案。
-6. 构建后过你自己的 4 项自检（Swap/Squint/Signature/Token test）。
+6. 颜色/字号/圆角/间距一律引用 tokens.css 变量，不写字面值（硬性规则 6）。
+7. 构建后过你自己的 4 项自检（Swap/Squint/Signature/Token test）。
 
 ### 冲突裁决
 
@@ -258,7 +263,7 @@ detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准�
 ## Phase 3：迭代与规范演进
 
 - **每次 UI 变更都经过本工作流**：读 DESIGN.md → Phase 1 路由 → 构建 → Phase 2 审查。不绕过。
-- **规范演进唯一入口是改 DESIGN.md**：用户确认的设计变更（换色、加字体、调圆角）→ 直接编辑 DESIGN.md frontmatter 对应字段 → 重跑 detector 确认现有代码与新规范的兼容情况，漂移处回流生产者修。
+- **规范演进唯一入口是改 DESIGN.md**：用户确认的设计变更（换色、加字体、调圆角）→ 直接编辑 DESIGN.md frontmatter 对应字段 → 重跑 `uupm_to_design.py --from-design DESIGN.md --tokens-css <token文件>` 重新生成 token 定义层 → 重跑 detector 确认现有代码与新规范的兼容情况，漂移处回流生产者修。
 - interface-design 沉淀的组件规范只追加进 `## Components` 节；全局 token 的变更只能由用户拍板后改 frontmatter。
 
 ---
@@ -270,6 +275,7 @@ detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准�
 3. Impeccable **只审不修**；修复永远回流给生产者。
 4. 审查不通过（detector 有 design-system-* finding 或 critique 有 P0）**不交付**。
 5. DESIGN.md 的 frontmatter 格式不许手写改动结构（嵌套 map、无列表、字符串加引号）——detector 的解析器只吃这个子集。加颜色加字号随便加，结构别动。
+6. **token 唯一定义层铁律**：颜色/字体/字号/圆角/间距的字面值只许出现在 token 定义层（DESIGN.md frontmatter → 生成的 tokens.css）；组件与页面代码只许引用 token 变量（`var(--accent)` 等），不许写字面值。tokens.css 是生成物，永不允许手改——改值只能改 DESIGN.md frontmatter 再重新生成。detector 的 design-system-* 规则就是这条铁律的机械兜底：组件层出现字面值必然成为 finding。
 
 ## 资源速查（路径 = 环境探测节解析出的 HOME 变量）
 
@@ -277,7 +283,7 @@ detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准�
 |---|---|
 | UUPM 检索脚本 | `$UUPM_HOME/scripts/search.py` |
 | UUPM 知识库数据 | `$UUPM_HOME/data/` |
-| 桥接脚本（UUPM JSON → DESIGN.md） | `$ZEDUI_HOME/scripts/uupm_to_design.py` |
+| 桥接脚本（UUPM JSON → DESIGN.md；DESIGN.md → tokens.css） | `$ZEDUI_HOME/scripts/uupm_to_design.py` |
 | Impeccable detector CLI（源码级 + 浏览器引擎共用） | `$IMP_HOME/scripts/detector/detect-antipatterns.mjs` |
 | Impeccable 豁免管理 | `$IMP_HOME/scripts/hook-admin.mjs` |
 | Taste skill 完整能力 | `$TASTE_HOME/SKILL.md` |

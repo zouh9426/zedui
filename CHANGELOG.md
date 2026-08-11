@@ -2,6 +2,13 @@
 
 本项目所有值得记录的变更都写在这里。格式约定：每条目回答两个问题——**改了什么**、**为什么这么改（决策理由）**。
 
+## [0.3.5] - 2026-08-11
+
+结构性防漂移：token 定义层从"靠人同步的两份拷贝"改为"DESIGN.md 单源 + 机械派生"。
+
+- **桥接脚本新增 tokens.css 输出**：`uupm_to_design.py` 加 `--tokens-css`（JSON 模式随 DESIGN.md 一起生成）与 `--from-design`（反解既有 DESIGN.md frontmatter 单独重新生成，Phase 3 规范演进路径）两种模式；输出 `:root` CSS 自定义属性（colors/字体/type-scale/rounded/spacing），带"生成物禁止手改"头注释。反解器是 frontmatter 子集的独立解析器，与生成器互为往返（实测 JSON 直出与 DESIGN.md 反解产物逐字节一致）。理由：某生产项目实测暴露的根因是"同一事实两份定义（规范文档 + 代码 token 层），靠人保持同步"——规范文档记录的一个焦点色从未在代码中实现过，漂移自规范诞生起隐形存在。任何靠"记得同步"维持的一致性都会漂移；结构性修法是消灭第二份拷贝，让代码侧 token 层只能从 DESIGN.md 机械派生。
+- **硬性规则新增第 6 条「token 唯一定义层铁律」**：字面值只许出现在 token 定义层，组件/页面代码只许引用 token 变量；tokens.css 永不手改。铁律成立后漂移空间收缩到"声明处字面值"——恰好是 detector design-system-* 规则的既有覆盖范围，无需新增任何检查点（不自检加行、不加发版扫描）。Taste / interface-design 的约束指令各补一条引用变量要求。SKILL.md 顶部 SSOT 段、0.4 落盘、0.0 迁移落盘、Phase 3 规范演进四处流程同步。理由：同一条根因的另一半——只生成 token 层而不约束使用，组件照样可以绕开它写字面值。
+
 ## [0.3.4] - 2026-08-11
 
 - **Phase 0 新增 0.0「既有规范迁移」分支**：项目已有 DESIGN.md 但不符合契约（指针文件/无 frontmatter/解析失败）、或无 DESIGN.md 但有旧设计规范文档时，不再走 0.1~0.4 重新定方向，而是"翻译而非重定"——旧文档决策逐项翻译成 UUPM JSON（禁改旧值、禁发明 token），四确认项照旧检查，用户确认卡点保留，桥接脚本落盘（`--force` 覆盖指针文件），detector 验证解析。理由：某生产项目实测——uiweft 时代的指针式 DESIGN.md + docs/design/ 下细则文档的分离形态，让 detector 的 `design-system-*` 硬校验无规范可比（Phase 2 裸奔）；旧 Phase 0 只覆盖"没有 DESIGN.md"的场景，带历史规范的项目接入无路径。
