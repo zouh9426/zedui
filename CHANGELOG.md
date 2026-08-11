@@ -4,9 +4,10 @@
 
 ## [0.3.2] - 2026-08-11
 
-维护者本机部署模式改为"真源 + 符号链接"，AGENTS.md 部署位说明同步改写为真源纪律。
+维护者本机部署模式改为"真源 + 符号链接"，AGENTS.md 部署位说明同步改写为真源纪律；frontmatter `name:` 及各处 skill 名引用统一为品牌大小写 `zedui`。
 
 - **真源纪律**：`~/.kimi-code/skills/zedui` 由真实目录副本改为指向仓库 `zedui/` 的符号链接；原"Kimi Code 加载器不跟随符号链接"的踩坑记录在 v0.34.0 上经对照实验证伪（符号链接 skill 与真实目录 skill 均正常加载），rsync 副本模式废弃。理由：与 zedback / zedboot 真源纪律统一，消除副本漂移；公开安装指引（README/SETUP 的拷贝安装）面向普通用户，不受影响。
+- **frontmatter `name: zedui` 改为 `name: zedui`**：skill 列表等以 `name:` 为显示名的场合此前显示小写 `zedui`，与品牌名 zedui 不一致（兄弟 skill zedboot 的 frontmatter 已是品牌大小写）。SKILL.md 环境探测表、SETUP 双语检测/安装表、README 双语触发语、AGENTS.md 正文同步替换；SKILL.md 与 SETUP 双语的 name 匹配规则补充"不区分大小写"，兼容改名前已安装的副本（`name: zedui`）。目录名 `zedui/` 与路径占位符保持小写不动（skill 按 frontmatter `name:` 识别，不挑目录名）。理由：品牌大小写统一；下游 zedboot 按 `name:` 检测本 skill，其匹配值需跟进同步为 `zedui`。
 
 ## [0.3.1] - 2026-08-11
 

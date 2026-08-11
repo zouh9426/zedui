@@ -31,7 +31,7 @@ Phase 2 审查：detector 双层扫描（源码级 + 浏览器引擎）→ criti
 
 本 skill 不写死任何安装路径——不同 AI 工具（Kimi Code / Claude Code / Codex 等）的技能目录不同。**会话开始时先解析出五个 HOME 变量，之后本文所有命令里的 `$XXX_HOME` 都指解析结果。**
 
-**解析规则（按 skill 名匹配，不是按目录名）**：在候选技能目录下逐层找 `SKILL.md`，读 frontmatter 的 `name:` 字段与目标 skill 名比对——目录名和 skill 名可能不一致（例如目录 `taste-skill/` 里装的 skill 名是 `design-taste-frontend`），按目录名找会漏。
+**解析规则（按 skill 名匹配，不是按目录名）**：在候选技能目录下逐层找 `SKILL.md`，读 frontmatter 的 `name:` 字段与目标 skill 名比对（**不区分大小写**，兼容改名前安装的副本）——目录名和 skill 名可能不一致（例如目录 `taste-skill/` 里装的 skill 名是 `design-taste-frontend`），按目录名找会漏。
 
 候选技能目录（逐个检查存在的）：
 
