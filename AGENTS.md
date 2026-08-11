@@ -21,10 +21,15 @@
 3. **双语文档同步**：README.md ↔ README.en.md、SETUP.md ↔ SETUP.en.md，改了一边另一边必须在同一次迭代里跟上。中文是主门面（目标用户以中文用户为主），英文版跟随。
 4. **SKILL.md 的工作流逻辑改动要克制**：这是经过多轮试点验证的流程，改动需在 CHANGELOG 里写明实测依据，不凭感觉改。
 
-## 本机部署位提醒（仅维护者本机适用，不进任何仓库文件）
+## 真源纪律（仅维护者本机适用，不进任何仓库文件）
 
-`~/.kimi-code/skills/zedui/` 是**真实目录不是软链接**（Kimi Code 加载器不跟随符号链接，踩过坑）。改完仓库源码后，必须手动把 `zedui/` 拷贝过去才在本机生效：
+skill 本体的唯一真源在本仓库 `zedui/` 目录。线上生效位置 `~/.kimi-code/skills/zedui` 是**指向真源的符号链接**，不是副本。任何修改只改真源（仓库），线上零操作自动生效；发现线上是普通目录时（例如从旧机器恢复、照抄了旧版 rsync 部署），立即迁回并重建链接：
 
 ```bash
-rsync -a --delete zedui/ ~/.kimi-code/skills/zedui/
+# 前置：diff -rq 确认真源与线上副本无差异（有差异则以仓库版为准先合并）
+diff -rq zedui/ ~/.kimi-code/skills/zedui/
+rm -rf ~/.kimi-code/skills/zedui
+ln -s <zedui 仓库路径>/zedui ~/.kimi-code/skills/zedui
 ```
+
+历史注记：本节曾记录"Kimi Code 加载器不跟随符号链接，踩过坑"并采用 rsync 副本模式；2026-08-11 在 v0.34.0 上经对照实验证伪（符号链接 skill 与真实目录 skill 均正常加载），已统一为符号链接模式。
