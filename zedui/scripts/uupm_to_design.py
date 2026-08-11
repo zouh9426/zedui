@@ -48,6 +48,18 @@ COMPONENTS_PLACEHOLDER = (
 LABEL_KEYS = ("variance_label", "motion_label", "density_label")
 
 
+def _color_keys(colors):
+    """Ordered color keys for output: fixed COLOR_ROLES, optional `text`
+    (only when it differs from foreground), then any extra keys present in
+    the UUPM JSON — user-confirmed additions such as secondary_text or
+    dark_* tokens must survive the bridge instead of being dropped."""
+    keys = list(COLOR_ROLES)
+    if colors.get("text") not in (None, "") and colors.get("text") != colors.get("foreground"):
+        keys.append("text")
+    keys.extend(k for k in colors if k not in keys and k not in ("text", "notes"))
+    return keys
+
+
 # --------------------------------------------------------------------------
 # token naming helpers
 # --------------------------------------------------------------------------
@@ -136,9 +148,7 @@ def build_frontmatter(ds, rounded_scale, type_scale, spacing_scale):
     lines.append("name: %s" % _q(name))
 
     colors = ds.get("colors") or {}
-    color_keys = list(COLOR_ROLES)
-    if colors.get("text") not in (None, "") and colors.get("text") != colors.get("foreground"):
-        color_keys.append("text")
+    color_keys = _color_keys(colors)
     lines.append("colors:")
     for k in color_keys:
         lines.append("  %s: %s" % (k, _q(colors.get(k))))
@@ -288,9 +298,7 @@ def build_body(ds, rounded_scale, type_scale, spacing_scale, mkt, prod, prod_lab
     sections.append("\n".join(overview))
 
     # ---- 2. Colors ----
-    color_keys = list(COLOR_ROLES)
-    if colors.get("text") not in (None, "") and colors.get("text") != colors.get("foreground"):
-        color_keys.append("text")
+    color_keys = _color_keys(colors)
     color_lines = ["## Colors", "", "| Token | Value |", "|---|---|"]
     for k in color_keys:
         color_lines.append("| %s | %s |" % (k, _cell(_s(colors.get(k)))))

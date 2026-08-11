@@ -20,7 +20,7 @@ You are an installation assistant. Please help me install **zedui** (the UI-spec
 
 ## Step 2: Check existing installations
 
-Walk the skills directory looking for `SKILL.md` files, read the `name:` field in the frontmatter, and check whether the following five skills are installed (**match by `name`, not by directory name** — the directory name may differ from the skill name; name matching is case-insensitive):
+Walk the skills directory looking for `SKILL.md` files, read the `name:` field in the frontmatter, and check whether the following five skills are installed (**match by `name`, not by directory name** — the directory name may differ from the skill name; name matching is case-insensitive. If you use `find`, pass `-L` to follow symlinks, otherwise symlink-installed skills are missed):
 
 | Skill name | Purpose |
 |---|---|
