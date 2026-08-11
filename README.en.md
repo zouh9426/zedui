@@ -3,7 +3,7 @@
 > weft = 纬线。四个独立的 UI skill 是纬线，`DESIGN.md` 是经纱——zedui 把它们织成一匹不漂移的布。
 > (weft: the crosswise threads in weaving. The four independent UI skills are the wefts, and `DESIGN.md` is the warp — zedui weaves them into a cloth that doesn't drift.)
 
-[中文](README.md) · [Setup guide prompt](SETUP.md) · [Changelog](CHANGELOG.md)
+[中文](README.md) · [Setup guide prompt](SETUP.en.md) · [Changelog](CHANGELOG.md)
 
 zedui is a **workflow orchestration skill**: it doesn't do design or review itself. Instead, it chains four mature UI skills into a spec-constrained pipeline, solving the biggest pain point of multi-skill collaboration — **each skill invents its own spec file, so outputs inevitably drift**.
 
@@ -29,6 +29,7 @@ Phase 2 审查：Impeccable detector 双层扫描（源码 + 浏览器引擎）�
 
 - **A single `DESIGN.md` as the single source of truth (SSOT)**: all global visual decisions (color / typography / spacing / radius / dial) may only live in the project-root `DESIGN.md` (YAML frontmatter + fixed sections); no second spec file is allowed. On conflict, `DESIGN.md > skill-internal default rules`.
 - **Format bridging**: the JSON produced by UUPM is mechanically converted into DESIGN.md by `scripts/uupm_to_design.py`, guaranteeing a 100% stable, parser-friendly format — never hand-written.
+- **The token layer is generated, never hand-edited**: the code-side `tokens.css` is mechanically derived by the bridge script from the DESIGN.md frontmatter — in JSON mode via `--tokens-css`, and on spec evolution via `--from-design`. It is a build artifact; hand-editing it is forbidden. Literal values may live only in the token definition layer; component and page code may only reference token variables.
 - **Human checkpoint at kickoff**: the proposal is laid out to the user for item-by-item confirmation (covering four known weak spots: secondary text color, neutral ink, dark tokens, and the CJK font stack) before it is written to disk; without confirmation, no DESIGN.md is produced.
 - **Review only, never fix**: the detector's four `design-system-*` rules mechanically diff the code against DESIGN.md; any drift is a finding. Fixes are routed back to the producer, then re-reviewed and archived.
 
@@ -41,7 +42,7 @@ Phase 2 审查：Impeccable detector 双层扫描（源码 + 浏览器引擎）�
 
 ## Installation
 
-**Recommended (let your AI do it)**: open [SETUP.md](SETUP.md) and paste the entire file into your AI agent — it will check dependencies, install the five skills, configure the browser engine, and run self-checks automatically.
+**Recommended (let your AI do it)**: open [SETUP.en.md](SETUP.en.md) and paste the entire file into your AI agent — it will check dependencies, install the five skills, configure the browser engine, and run self-checks automatically.
 
 **Manual**: copy this repo's `zedui/` directory into your AI tool's skills directory (e.g. `~/.agents/skills/`, `~/.claude/skills/`, `~/.kimi-code/skills/`, `~/.codex/skills/`) and install the four companion skills per the table above. Skills recognize each other by the `name:` field in their frontmatter — directory names and tools don't matter.
 
@@ -58,7 +59,7 @@ The first use enters Phase 0: the AI asks you 3–5 questions, proposes a design
 ```
 zedui/
 ├── SKILL.md                    ← 编排工作流本体（工具无关，运行时探测路径）
-└── scripts/uupm_to_design.py   ← UUPM JSON → DESIGN.md 桥接脚本（纯标准库）
+└── scripts/uupm_to_design.py   ← bridge: UUPM JSON → DESIGN.md; DESIGN.md frontmatter → tokens.css (stdlib only; tokens.css is generated, never hand-edited)
 README.md / README.en.md        ← 中英双门面
 SETUP.md / SETUP.en.md          ← 安装引导提示词（贴给你的 AI 即可）
 CHANGELOG.md                    ← 更新与决策日志

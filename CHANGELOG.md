@@ -2,6 +2,16 @@
 
 本项目所有值得记录的变更都写在这里。格式约定：每条目回答两个问题——**改了什么**、**为什么这么改（决策理由）**。
 
+## [0.3.7] - 2026-08-12
+
+全量审计（脚本实测 + 文档交叉核对 + 某生产项目试点回流）后的集中修复。
+
+- **桥接脚本四个边界 bug 修复**：① 带引号的 frontmatter key（如 `"20": "20px"`）此前会生成 `--text-"20"` 非法 CSS 变量名（浏览器静默丢弃整条声明），现 key 与值一样剥引号；② 一处 PEP 584 dict union（Python 3.9+）改回 3.8 兼容写法，与文档"Python 3"承诺对齐；③ `--tokens-css` 父目录不存在时裸 traceback，现自动 makedirs；④ `--from-design` 与 `-o`/位置参数同用从此前静默忽略改为友好报错。理由：前三者都是"按文档正常用法就会踩中"的边界缺陷，手改 frontmatter 是 Phase 3 规范演进的正式路径，不能靠用户避让。
+- **README/SETUP 文档对齐**：README（中英）补上 0.3.5 引入的 token 唯一定义层（此前头条功能在门面完全缺席）；README.en.md 两处链接从指向中文 SETUP.md 改为 SETUP.en.md；SETUP.en.md 两处中文占位符残留英文化。理由：门面与 CHANGELOG 记录的功能状态脱节会误导新接入者。
+- **SKILL.md 补三条实测教训**：① 2.2.1——Chrome CLI `--screenshot --window-size=390` 有约 500px 最小窗宽伪影，移动端截图必须用 puppeteer setViewport / CDP 设备模拟等真实模拟（2026-08-12 某生产项目实测：CLI 截图呈现"整页溢出"假象，真实模拟下无溢出）；② 2.3——ignoreValues 的 files 匹配对 URL 模式浏览器扫描不生效、`.impeccable/` 被整体 gitignore 时豁免配置不随仓库走；③ 2.1——design-system-color 实测只抓部分属性位置的字面值（box-shadow 值内等会漏），detector 清零后需人工 grep 补网。理由：三条都是试点中真实踩过并付出过排查成本的坑，不进文档就会再踩。
+- **SKILL.md 补六处流程缺口（0.0/0.3/0.4/2.1）**：① 0.0 迁移落盘前把旧文档全部圆角/字号值对照桥接脚本默认阶梯，缺的显式 `--rounded` / `--type-scale` 传参——默认阶梯不含旧值时旧值被静默丢弃，detector 随后把页面旧值报成漂移（2026-08-12 某模拟项目实测：旧值 6px 圆角不显式传参即被丢弃）；② 0.0 补建议 token（dark_*、secondary_text 等）前对照页面实现值——design-system-color 有颜色通道容差（±6），建议值接近既有实现色会把未登记色"洗白"成色板内不再报漂移；③ 0.0 无样式入口形态（纯内联样式/无全局 CSS/无 :root 块）时 tokens.css 落项目根或样式目录并在 PROJECT_INDEX 登记"未接入，留待页面改版时启用"，不算漏步；④ 0.3 CJK 确认项补 Google Fonts URL 一致性——UUPM 输出 URL 可能含 heading/body 之外的字体（实测出现过 Cinzel），design-system-font 比对 URL 必报 finding；CJK 栈落地需同步改 JSON 的 heading/body/google_fonts_url/css_import 四个字段；⑤ 0.4 补 `--tokens-css` 落盘目录指引（Next.js 用 app/、普通前端用 css/ 或 styles/、无样式目录先落根）；⑥ 2.1 检测边界补颜色通道容差（±6）——与色板近似的未登记色判为色板内静默通过，临界色值需人工复核。理由：全在模拟项目实测中暴露的"文档没说导致执行时踩坑"场景，补文档即可让迁移/确认/落盘路径不再依赖执行者自己撞出来。
+- **桥接脚本 tokens.css 头注释可移植性**：`Single source of truth` 行不再嵌 `-o` 的绝对路径（JSON 模式）或相对名（--from-design 模式），统一取 basename——同一项目两种模式重生成产物逐字节一致（实测 JSON 模式 `-o /abs/path/DESIGN.md` + `--from-design DESIGN.md` 往返 tokens.css byte-identical）。理由：两模式产物仅注释行不同会污染 diff、干扰"生成物可比对"的机械保证。
+
 ## [0.3.6] - 2026-08-11
 
 - **维护纪律修正：实测依据匿名化**。此前 0.3.4/0.3.5 等版本的 CHANGELOG、commit message、Release notes 在"实测依据"中含用户项目可识别信息（项目名/内部任务编号/项目内路径），已连 git 历史一起改写清除（rebase + force push + Release notes 修订）；AGENTS.md 红线新增第 4 条把匿名化固化为维护规则。理由：公开仓库里可识别信息与隐私同罪，仅靠"不含密钥"的标准不够。

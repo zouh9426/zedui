@@ -47,8 +47,8 @@ Report a list of what's present / missing.
 If Chrome/Chromium was found in Step 1:
 
 ```bash
-cd <技能目录下 impeccable 的实际位置> && PUPPETEER_SKIP_DOWNLOAD=1 npm i puppeteer
-export PUPPETEER_EXECUTABLE_PATH="<你的 Chrome 可执行文件路径>"
+cd <the actual location of impeccable under your skills directory> && PUPPETEER_SKIP_DOWNLOAD=1 npm i puppeteer
+export PUPPETEER_EXECUTABLE_PATH="<path to your Chrome executable>"
 ```
 
 Then tell me: every future session that runs browser-engine scans needs this environment variable (it's recommended to add it to your shell config).

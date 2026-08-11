@@ -28,6 +28,7 @@ Phase 2 审查：Impeccable detector 双层扫描（源码 + 浏览器引擎）�
 
 - **单一 `DESIGN.md` 作唯一事实源（SSOT）**：所有全局视觉决策（色彩/字体/间距/圆角/dial）只许写进项目根的 `DESIGN.md`（YAML frontmatter + 固定章节），禁止任何第二份规范文件。冲突时 `DESIGN.md > skill 内部默认规则`。
 - **格式桥接**：UUPM 产出的 JSON 经 `scripts/uupm_to_design.py` 机械转换为 DESIGN.md，保证审查器可解析的格式 100% 稳定，不手写。
+- **token 唯一定义层（生成物禁手改）**：代码侧 `tokens.css` 由桥接脚本从 DESIGN.md frontmatter 机械生成——JSON 模式随文档一起产出（`--tokens-css`），规范演进时用 `--from-design` 反解 frontmatter 重新生成；它是生成物，永不允许手改。字面值只许出现在 token 定义层，组件/页面代码只许引用 token 变量。
 - **开局人工卡点**：方案摊给用户逐项确认（含次级文字色、中性墨色、暗色 token、CJK 字体栈四个已知短板）后才落盘，无确认的 DESIGN.md 不动工。
 - **审查只审不修**：detector 的 `design-system-*` 四条规则机械比对代码与 DESIGN.md，漂移即 finding；修复回流给生产者，改完复评留档。
 
@@ -57,7 +58,7 @@ Phase 2 审查：Impeccable detector 双层扫描（源码 + 浏览器引擎）�
 ```
 zedui/
 ├── SKILL.md                    ← 编排工作流本体（工具无关，运行时探测路径）
-└── scripts/uupm_to_design.py   ← UUPM JSON → DESIGN.md 桥接脚本（纯标准库）
+└── scripts/uupm_to_design.py   ← 桥接脚本：UUPM JSON → DESIGN.md；DESIGN.md frontmatter → tokens.css（纯标准库；tokens.css 为生成物，禁手改）
 README.md / README.en.md        ← 中英双门面
 SETUP.md / SETUP.en.md          ← 安装引导提示词（贴给你的 AI 即可）
 CHANGELOG.md                    ← 更新与决策日志

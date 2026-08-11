@@ -112,7 +112,7 @@ def build_rounded_scale(values):
             out[_name_for("rounded", idx)] = v
             idx += 1
     if "none" in out:
-        out = {"none": out["none"]} | {k: val for k, val in out.items() if k != "none"}
+        out = {**{"none": out["none"]}, **{k: val for k, val in out.items() if k != "none"}}
     return out
 
 
@@ -428,7 +428,7 @@ def build_tokens_css(colors, heading_font, body_font, type_scale, rounded_scale,
     lines = [
         "/* -----------------------------------------------------------------------",
         " * GENERATED FILE — DO NOT EDIT BY HAND.",
-        " * Single source of truth: DESIGN.md frontmatter (%s)." % source_desc,
+        " * Single source of truth: DESIGN.md frontmatter (%s)." % os.path.basename(source_desc),
         " * Regenerate after any frontmatter change:",
         " *   uupm_to_design.py --from-design DESIGN.md --tokens-css <this file>",
         " * Usage invariant: component code references these variables; literal",
@@ -458,16 +458,28 @@ def build_tokens_css(colors, heading_font, body_font, type_scale, rounded_scale,
 
 
 def _unquote(val):
-    """Unquote a double-quoted scalar from the minimal-YAML frontmatter."""
+    """Unquote a quoted scalar from the minimal-YAML frontmatter.
+
+    Strips one matching pair of double or single quotes. Values and keys share
+    this handling, so a quoted key like ``"20"`` cannot leak its quotes into a
+    generated CSS variable name.
+    """
     val = val.strip()
-    if len(val) >= 2 and val[0] == '"' and val[-1] == '"':
-        val = val[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+        quote = val[0]
+        inner = val[1:-1]
+        if quote == '"':
+            inner = inner.replace('\\"', '"').replace("\\\\", "\\")
+        else:
+            inner = inner.replace("\\'", "'").replace("\\\\", "\\")
+        return inner
     return val
 
 
 def parse_design_frontmatter(text):
     """Parse the restricted-YAML frontmatter this script emits (nested maps,
-    2-space indents, double-quoted scalars, no lists) into nested dicts.
+    2-space indents, double- or single-quoted scalars, no lists) into nested
+    dicts.
 
     Raises ValueError on anything outside the subset.
     """
@@ -493,7 +505,7 @@ def parse_design_frontmatter(text):
         if ":" not in stripped:
             raise ValueError("unsupported frontmatter line: %r" % raw)
         key, _, val = stripped.partition(":")
-        key = key.strip()
+        key = _unquote(key)
         val = val.strip()
         while len(stack) > 1 and indent <= stack[-1][0]:
             stack.pop()
@@ -510,7 +522,14 @@ def parse_design_frontmatter(text):
 
 
 def write_tokens_css(path, content):
-    """Tokens file is a generated artifact: always overwritten."""
+    """Tokens file is a generated artifact: always overwritten.
+
+    Creates the parent directory on demand, so a --tokens-css target inside a
+    not-yet-existing directory succeeds instead of raising a bare traceback.
+    """
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(content)
 
@@ -536,7 +555,7 @@ def main(argv=None):
     )
     parser.add_argument("input", metavar="INPUT", nargs="?",
                         help="path to the design-system JSON, or '-' to read from stdin")
-    parser.add_argument("-o", "--output", default="DESIGN.md",
+    parser.add_argument("-o", "--output", default=None,
                         help="output markdown path (default: ./DESIGN.md)")
     parser.add_argument("--from-design", default=None, metavar="DESIGN_MD",
                         help="read tokens from an existing DESIGN.md frontmatter instead of "
@@ -561,6 +580,14 @@ def main(argv=None):
         if not args.tokens_css:
             print("error: --from-design requires --tokens-css", file=sys.stderr)
             sys.exit(1)
+        if args.output is not None:
+            print("error: --from-design only emits tokens.css; -o/--output is not supported",
+                  file=sys.stderr)
+            sys.exit(1)
+        if args.input is not None:
+            print("error: --from-design reads DESIGN.md instead of a UUPM JSON; "
+                  "positional INPUT must be omitted", file=sys.stderr)
+            sys.exit(1)
         try:
             with open(args.from_design, "r", encoding="utf-8") as fh:
                 design_text = fh.read()
@@ -584,6 +611,9 @@ def main(argv=None):
         )
         write_tokens_css(args.tokens_css, css)
         return
+
+    if args.output is None:
+        args.output = "DESIGN.md"
 
     if args.input is None:
         print("error: INPUT is required (or use --from-design)", file=sys.stderr)

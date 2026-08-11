@@ -70,9 +70,9 @@ Phase 2 审查：detector 双层扫描（源码级 + 浏览器引擎）→ criti
 
 1. **定位规范源**：读指针目标或搜索项目内设计规范文档，确认它是用户认可的现行规范（不确定就问，别猜）。
 2. **翻译而非重定**：把旧文档的全局决策（色板、字体、圆角、字号、间距、明暗支持）逐项翻译成 UUPM JSON 结构（结构见 `$ZEDUI_HOME/scripts/uupm_to_design.py` 头部注释），**禁止发明新 token、禁止改动任何已有值**。旧文档没覆盖的字段（dial 三档、spacing 等）按默认/建议值给出并标注"新增建议，待确认"。
-3. **四确认项照旧**：0.3 的次级文字色 / 中性墨色 / 暗色 token / CJK 字体栈逐项检查，缺则补——旧规范最常缺的正是这四项。
+3. **四确认项照旧**：0.3 的次级文字色 / 中性墨色 / 暗色 token / CJK 字体栈逐项检查，缺则补——旧规范最常缺的正是这四项。**补建议 token 前先对照页面实现值**：detector 的 `design-system-color` 有颜色通道容差（±6）——建议值若与页面既有实现色接近，会把真实的未登记色"无意洗白"判为色板内、不再报漂移。拿不准的页面色保持漂移状态更安全。
 4. **用户确认（硬性卡点，同 0.3）**：翻译结果 + 建议项摊开确认；旧规范文档的处置（归档 / 保留为细则文档并在 DESIGN.md 建立引用）一并裁决——**禁止静默双规范并存**。
-5. **落盘**：用桥接脚本从翻译后的 JSON 生成 DESIGN.md + tokens.css（`--tokens-css`），格式由脚本保证可解析；覆盖既有 DESIGN.md 用 `--force`（指针内容已完成历史使命）。tokens.css 接入样式入口，旧 `:root` 手写 token 块替换为别名映射。
+5. **落盘**：用桥接脚本从翻译后的 JSON 生成 DESIGN.md + tokens.css（`--tokens-css`），格式由脚本保证可解析；覆盖既有 DESIGN.md 用 `--force`（指针内容已完成历史使命）。tokens.css 接入样式入口，旧 `:root` 手写 token 块替换为别名映射。**落盘前先对照旧值**：桥接脚本的圆角/字号用默认阶梯（rounded 默认 "0px,4px,8px,12px,16px,24px"、type-scale 默认 "12px,14px,16px,20px,24px,32px,40px,48px,64px"），**不含旧文档的圆角/字号值时旧值会被静默丢弃**——detector 随后把页面里的旧值报成漂移，迁移保真直接失败（2026-08-12 某模拟项目实测：旧值 6px 圆角不显式传参即被丢弃）。落盘前必须把旧文档的全部圆角/字号值对照默认阶梯，缺的用 `--rounded` / `--type-scale` 显式传入。**无样式入口形态**：旧项目可能纯内联样式、无全局 CSS、无 `:root` 块——"tokens.css 接入样式入口"无物可接。此时 tokens.css 落盘项目根或样式目录，并在 PROJECT_INDEX 登记"未接入，留待页面改版时启用"即可，不算漏步。
 6. **验证**：跑 2.1 detector 确认 frontmatter 可解析、`design-system-*` 四条规则能正常比对；对既有代码的漂移 finding 只报告，修复走 Phase 1/2 正常回流。
 
 ### 0.1 提问（编排层做，UUPM 不会提问）
@@ -123,7 +123,7 @@ python3 "$UUPM_HOME/scripts/search.py" "<产品类型> <行业> <风格关键词
 1. **次级文字色**：UUPM 的 10 角色色板没有 body 次级文本灰，落地页/产品页都会需要。不够就当场补一个 `secondary_text` token。
 2. **中性墨色**：UUPM 色板为营销页优化，foreground 常是品牌色（蓝色文字）。产品页正文用品牌色会很难看——确认正文是否改用中性色，标题才用 foreground。
 3. **暗色 token**：UUPM JSON 只产出一套色值，明暗支持只是标注。项目要双模的话，当场补 `dark_*` 系列 token，否则 Taste 的双模强制会无 token 可用。
-4. **CJK 字体栈（中文/双语项目必须确认）**：UUPM 的字体库全是 Latin 字体，**不含 CJK 字形**——中文内容会静默回退到系统默认宋体/黑体，字体决策等于半失效，且 detector 完全测不出这种回退（它只看 font-family 声明）。中文项目必须把 fontFamily 写成栈：`"EB Garamond, Noto Serif SC"`（Latin 字体在前管西文与数字，CJK 字体在后管中文），Google Fonts URL 同步加上 CJK family。
+4. **CJK 字体栈（中文/双语项目必须确认）**：UUPM 的字体库全是 Latin 字体，**不含 CJK 字形**——中文内容会静默回退到系统默认宋体/黑体，字体决策等于半失效，且 detector 完全测不出这种回退（它只看 font-family 声明）。中文项目必须把 fontFamily 写成栈：`"EB Garamond, Noto Serif SC"`（Latin 字体在前管西文与数字，CJK 字体在后管中文），Google Fonts URL 同步加上 CJK family。**字体相关 JSON 字段要四个一起改**：`heading` / `body` 的 fontFamily、`google_fonts_url`、`css_import`——只改前三个会让 URL / 导入与实际字体栈对不上。**且 `google_fonts_url` 要逐 family 核对**：UUPM 输出的 URL 可能含 heading/body 之外的字体（实测出现过 Cinzel 不属于任一），detector 的 `design-system-font` 比对 URL 时必报 finding——多余字体从 JSON 里清掉，别留进 URL。
 
 **用户明确说可以了才进入 0.4。有任何修改就调整后重新确认。**
 
@@ -144,7 +144,7 @@ python3 "$ZEDUI_HOME/scripts/uupm_to_design.py" uupm_output.json \
   [--marketing-dials V,M,D] [--product-dials V,M,D]
 ```
 
-`tokens.css` 落盘后接入项目样式入口（如全局 CSS 里 `@import`/拷贝引入），项目若已有手写 `:root` token 块，用它替换并把旧变量名映射为别名指向新变量（防引用断裂）。DESIGN.md + tokens.css 生成后，Phase 0 完成。之后任何页面才可以动工。
+**`--tokens-css` 目标目录**：没有既定样式目录的项目——Next.js 落 `app/`、普通前端落 `css/` 或 `styles/`，完全无样式目录就先落项目根，样式体系成型后再迁。`tokens.css` 落盘后接入项目样式入口（如全局 CSS 里 `@import`/拷贝引入），项目若已有手写 `:root` token 块，用它替换并把旧变量名映射为别名指向新变量（防引用断裂）。DESIGN.md + tokens.css 生成后，Phase 0 完成。之后任何页面才可以动工。
 
 ---
 
@@ -207,7 +207,7 @@ node "$IMP_HOME/scripts/detector/detect-antipatterns.mjs" --json <目标文件�
 - exit code 2 = 有发现。
 - 不同版本的 Impeccable 目录布局可能不同——`scripts/detector/detect-antipatterns.mjs` 不存在时，在 `$IMP_HOME` 内搜索 `detect-antipatterns.mjs` 的实际位置再用（`hook-admin.mjs` 同理）。
 
-**检测边界（实测确认）**：`design-system-color` 只检查**属性声明处的字面值**（`color: #00C853` 会被抓）；CSS 自定义属性的定义行（`--accent: #xxx`）和 `var()` 引用**不检查**。硬校验抓的是"绕过 token 手写字面值"这类最常见的漂移；token 定义层的正确性靠 0.3 确认和人工把关，不要误以为 detector 全能。
+**检测边界（实测确认）**：`design-system-color` 只检查**属性声明处的字面值**（`color: #00C853` 会被抓）；CSS 自定义属性的定义行（`--accent: #xxx`）和 `var()` 引用**不检查**。硬校验抓的是"绕过 token 手写字面值"这类最常见的漂移；token 定义层的正确性靠 0.3 确认和人工把关，不要误以为 detector 全能。更具体地说，`design-system-color` 实测**只抓部分属性位置的字面值**——`box-shadow` 值内、部分上下文会漏。**detector 清零后应人工补网**：`grep -nE "#[0-9a-fA-F]{3,8}|rgba?\("` 扫一遍源码，确认没有漏网的色值字面量再交付。另外 `design-system-color` 有颜色通道容差（±6）——与色板近似的未登记色会被判为色板内静默通过，临界色值需人工复核。
 
 ### 2.2 浏览器引擎扫描（有浏览器时必须跑）
 
@@ -232,6 +232,8 @@ done
 
 截图人工审查的判断标准：布局是否按媒体查询坍缩为单列、有无横向滚动、文字是否溢出、触控目标是否 ≥44px。布局级的响应式打分由 2.4 的 `audit`（Responsive 维度：固定宽度/横向滚动/断点缺失/触达尺寸，0-4 分）负责。
 
+**截图方式实测教训**：不要用 Chrome CLI 的 `--screenshot --window-size=390` 截移动端图——CLI 截图有最小窗宽（约 500px）伪影，390 的移动视口是假的。移动端截图必须用 puppeteer `setViewport` / CDP 设备模拟等真实模拟方式（2026-08-12 某生产项目实测：CLI 截图显示整页溢出 P0，真实模拟下无溢出——以真实模拟结果为准）。
+
 ### 2.3 豁免（误报处置）
 
 detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准的 token 可能命中通用规则（实测：`overused-font` 命中批准字体、`side-tab` 命中签名组件、`cream-palette` 命中批准底色）。处理原则：**被 DESIGN.md 批准的，是"决策，不是缺陷"**；命中 `design-system-*` 四条规则的**没有豁免**——那才叫漂移。
@@ -244,6 +246,11 @@ detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准�
 - **无值规则**（`cream-palette`、`gray-on-color`、`cramped-padding`、`side-tab` 等）：`ignore-value` 按值写永远匹配不上（实测）。全项目故意决策用 `hook-admin.mjs ignore-rule <id> --reason "..."`；单文件用 `ignore-value <id> "*" --file <路径>`。
 
 **豁免写在哪**：`.impeccable/config.json` 放在**运行 detector / 安装 hook 的那个项目根**——hook 从会话工作目录读配置，不是从被审文件所在目录读（实测踩坑：豁免写进子项目目录，hook 在父目录触发时看不到）。**file 作用域的路径写"相对 hook 工作目录"的形式**；hook 消息里展示的长路径是显示形式不是匹配形式，不确定时两种形式都写进 `files` 数组。
+
+**两个豁免配套坑（实测确认）**：
+
+- **URL 模式扫描豁免不到**：`ignoreValues` 的 `files` 匹配只对文件/源码模式生效，**对 URL 模式（浏览器引擎扫描）不生效**——豁免不了 URL 扫描的 finding。URL 扫描结果以人工研判 / 备案为准（备案前置条件见上）。
+- **豁免配置要随仓库走**：若项目把 `.impeccable/` 整体 gitignore，豁免配置就不随仓库走，团队成员各跑各的、finding 口径不一。需要团队共享豁免时，**别把 `config.json` 忽略掉**（只忽略其余产物即可，如 `.impeccable/critique/`）。
 
 ### 2.4 设计评审与技术审计
 
