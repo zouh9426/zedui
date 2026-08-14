@@ -53,12 +53,29 @@ def _write_skill(root, dirname, name, version=None):
     return d
 
 
+def _fake_search_py_source():
+    """Source text of a fake UUPM search.py that really answers doctor's
+    ``--design-system --json`` probe with a minimal contract-valid payload
+    (design_system wrapper, all required color roles, typography
+    heading/body, spacing_scale, dials). It ignores argv — the probe only
+    checks that the process exits 0 and emits contract-valid JSON."""
+    import uupm_to_design as utd
+    payload = {"design_system": {
+        "project_name": "FakeUUPM",
+        "colors": {role: "#112233" for role in utd.COLOR_ROLES},
+        "typography": {"heading": "Inter", "body": "Inter"},
+        "spacing_scale": {"md": "16px"},
+        "dials": {"variance": 3, "motion": 4, "density": 5},
+    }}
+    return "import json\nprint(json.dumps(%r))\n" % payload
+
+
 def _full_skill_tree(root, version=None, with_scripts=True):
     """All five skills under root. impeccable gets version (default = the
     tested baseline) plus scripts/context.mjs + scripts/detect.mjs so [3/6]
-    passes; zedui gets real copies of the bridge/lint scripts so [5/6]
-    py_compile passes. ui-ux-pro-max deliberately has no search.py so the
-    real UUPM probe never runs inside a test (warn, not fail).
+    passes; ui-ux-pro-max gets a fake search.py that answers the real
+    contract probe so [4/6] passes; zedui gets real copies of the
+    bridge/lint scripts so [5/6] py_compile passes.
 
     Returns {skill_name: skill_dir}.
     """
@@ -77,6 +94,10 @@ def _full_skill_tree(root, version=None, with_scripts=True):
         for fn in ("context.mjs", "detect.mjs"):
             with open(os.path.join(imp, "scripts", fn), "w", encoding="utf-8") as fh:
                 fh.write("// stub %s\n" % fn)
+        uupm = dirs["ui-ux-pro-max"]
+        os.makedirs(os.path.join(uupm, "scripts"), exist_ok=True)
+        _write(os.path.join(uupm, "scripts", "search.py"),
+               _fake_search_py_source())
         zed = dirs["zedui"]
         os.makedirs(os.path.join(zed, "scripts"), exist_ok=True)
         for fn in ("uupm_to_design.py", "token_lint.py"):
@@ -194,7 +215,10 @@ class TestSkillResolution(unittest.TestCase):
             os.makedirs(home)
             # only ui-ux-pro-max is duplicated at project level; the rest of
             # the tree lives in the lower-priority home dir
-            _write_skill(proj, "uupm", "ui-ux-pro-max")
+            proj_uupm = _write_skill(proj, "uupm", "ui-ux-pro-max")
+            os.makedirs(os.path.join(proj_uupm, "scripts"))
+            _write(os.path.join(proj_uupm, "scripts", "search.py"),
+                   _fake_search_py_source())
             _full_skill_tree(home)
             hits = doctor.resolve_skill("ui-ux-pro-max", [proj, home])
             self.assertEqual(len(hits), 2)
@@ -299,6 +323,65 @@ class TestUupmProbeContract(unittest.TestCase):
             ok, res = doctor._probe_uupm_contract(script)
             self.assertFalse(ok)
             self.assertIn("JSON", res)
+
+
+class TestUupmSearchResolution(unittest.TestCase):
+    """[4/6] is fail-closed: a UUPM install whose SKILL.md resolves but which
+    has no usable search.py is a broken install (critical failure), never a
+    warning that still exits 0. A single drifted fallback is probed for real;
+    ambiguous candidates refuse to guess."""
+
+    def _tree(self, td):
+        dirs = _full_skill_tree(td)
+        proj_root = os.path.join(td, "proj-root")
+        os.makedirs(proj_root)
+        return dirs, proj_root
+
+    def test_standard_search_py_probe_passes(self):
+        with tempfile.TemporaryDirectory() as td:
+            _dirs, proj_root = self._tree(td)
+            rc, out = _run_doctor(proj_root, [td])
+            self.assertEqual(rc, 0, out)
+            self.assertIn("UUPM contract probe passed", out)
+            self.assertIn("All critical checks passed.", out)
+
+    def test_missing_search_py_anywhere_is_critical(self):
+        with tempfile.TemporaryDirectory() as td:
+            dirs, proj_root = self._tree(td)
+            os.remove(os.path.join(dirs["ui-ux-pro-max"], "scripts", "search.py"))
+            rc, out = _run_doctor(proj_root, [td])
+            self.assertEqual(rc, 1, out)
+            self.assertIn("incomplete ui-ux-pro-max install", out)
+            self.assertIn("One or more critical checks failed.", out)
+            self.assertNotIn("All critical checks passed.", out)
+
+    def test_fallback_unique_candidate_warns_and_probes(self):
+        with tempfile.TemporaryDirectory() as td:
+            dirs, proj_root = self._tree(td)
+            uupm = dirs["ui-ux-pro-max"]
+            alt_dir = os.path.join(uupm, "tools")
+            os.makedirs(alt_dir)
+            os.rename(os.path.join(uupm, "scripts", "search.py"),
+                      os.path.join(alt_dir, "search.py"))
+            rc, out = _run_doctor(proj_root, [td])
+            self.assertEqual(rc, 0, out)
+            self.assertIn("upstream path drift", out)
+            self.assertIn("UUPM contract probe passed", out)
+
+    def test_ambiguous_candidates_fail_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            dirs, proj_root = self._tree(td)
+            uupm = dirs["ui-ux-pro-max"]
+            std = os.path.join(uupm, "scripts", "search.py")
+            for sub in ("tools", "cli"):
+                d = os.path.join(uupm, sub)
+                os.makedirs(d)
+                shutil.copy2(std, os.path.join(d, "search.py"))
+            os.remove(std)
+            rc, out = _run_doctor(proj_root, [td])
+            self.assertEqual(rc, 1, out)
+            self.assertIn("multiple search.py candidates", out)
+            self.assertIn("refusing to guess", out)
 
 
 class TestMissingSkillEnvironment(unittest.TestCase):

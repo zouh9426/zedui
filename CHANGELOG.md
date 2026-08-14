@@ -2,6 +2,16 @@
 
 本项目所有值得记录的变更都写在这里。格式约定：每条目回答两个问题——**改了什么**、**为什么这么改（决策理由）**。
 
+## [Unreleased] - v0.4.1 patch candidate
+
+compatibility / release-hardening patch：修四处已确认问题，无架构变更、无新功能。
+
+- **doctor 的 UUPM 检查 fail-closed 化（假绿修复）**：此前 `ui-ux-pro-max` 的 SKILL.md 能解析、但 `$UUPM_HOME/scripts/search.py` 完全缺失时，[4/6] 只输出 warning 并以 "optional" 跳过真实契约探测——最终仍可 "All critical checks passed." 并 exit 0，而 ZedUI Phase 0 的核心链路必须调用 search.py，这等于把残缺安装判健康。现改为：标准路径存在则照旧真实 probe；标准路径不存在但在 `$UUPM_HOME` 内找到**唯一**候选时，输出 upstream path drift 的 warning 后用该脚本继续真实 probe；找到**多个**候选无法可靠判定入口时拒绝猜测、直接 critical failure；完全找不到任何 search.py 时 critical failure、doctor 返回非 0。理由：体检工具对核心依赖缺失放水，比没有体检更危险——它让"装完了"的确认失真。
+- **doctor 回归测试基础设施修正**：`test_doctor.py` 的 fake 完整 skill 树此前故意不提供 UUPM search.py，把"缺失只 warning"锁成了正常路径。现完整安装包含一个真正响应 `--design-system --json` probe 的 fake search.py（返回满足桥接契约的最小合法 JSON，不 mock probe 本身）；新增 4 条回归：标准路径 probe 成功 exit 0、完全无 search.py 必须 exit 1 且报 critical、唯一 fallback 候选 warning 后真实 probe 通过、多候选 ambiguity fail-closed。理由：测试锁错行为比没有测试更糟。
+- **critique 评分表述与 upstream 当前协议对齐**：SKILL.md Phase 2.1 原写"Nielsen 启发式 40 分制"，但 Impeccable 4.1.1 的 critique 协议允许启发式在确实不适用时标 n/a、分母按 applicable maximum 重算（8 项适用为 /32）。现改为版本兼容表述：评分细节以 Impeccable 自己的 critique 协议为准，zedui 不写死分母。理由：编排层硬编码 upstream 规则细节，upstream 一变就成错误指令——这条原则在 0.4.0 的版本契约里已确立，此处是漏网的一处。
+- **SKILL.md 顶部 workflow 总览与 Phase 3 对齐**：顶部原写"规范演进只通过修改 DESIGN.md frontmatter"，与 Phase 3 的实际分工（token 类走 frontmatter；marketing/product dials 属 Overview 人工区）冲突，会误导执行者把 dials 塞进 frontmatter。现改为三句分述：UI 变更走 Phase 1 → 2；token 类演进走 frontmatter；dials 按 Phase 3 更新 Overview 的 dial 表。schema 不变，不产生第二份 SSOT。理由：同一文件两处对同一流程说法不一致，执行者必然二选一踩错。
+- **SETUP 双语编号修正**：Step 5 自检第 1 项原写"不代替第 4 步的全链路体检"，但真正的 doctor 体检是 Step 5 内部的第 4 项（Step 4 是浏览器引擎配置）。中英文同步改为指向"下方第 4 项 doctor"。纯文案修正。
+
 ## [0.4.0] - 2026-08-14
 
 外部审计（对照四个上游 skill 当前真实接口逐条核验）后的架构级修复：SSOT 机制闭环、Impeccable 4.0.4 协议适配、桥接脚本 fail-closed 化、补测试与体检工具。

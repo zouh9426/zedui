@@ -57,7 +57,7 @@ Then tell me: every future session that runs browser-engine scans needs this env
 
 Run the following in order (using the actual paths resolved in Steps 2/3):
 
-1. `python3 <ui-ux-pro-max>/scripts/search.py "dashboard" --domain style` — should return style suggestions rather than an error (a single-item smoke test; it does not replace the full-chain health check in step 4)
+1. `python3 <ui-ux-pro-max>/scripts/search.py "dashboard" --domain style` — should return style suggestions rather than an error (a single-item smoke test; it does not replace item 4 below, the full-chain doctor health check)
 2. `node <impeccable>/scripts/detect.mjs --help` (the public entry; on older versions without it, fall back to `scripts/detector/detect-antipatterns.mjs`) — should print usage info
 3. `python3 <zedui>/scripts/uupm_to_design.py --help` — should print usage info
 4. **`python3 <zedui>/scripts/doctor.py`** — full-chain installation health check: the five skill resolutions, impeccable version and public detector entry, a real UUPM `--design-system --json` contract probe, and zedui script compilation. **The installation counts as complete only when all critical checks pass.** Report ⚠️ warnings to me as-is (e.g. impeccable version differing from the tested baseline, duplicate-install notices), but a ✗ critical failure must be fixed and re-run — never treat it as a successful install.

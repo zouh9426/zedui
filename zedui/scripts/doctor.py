@@ -24,9 +24,10 @@ Skill resolution candidate order (project-level first, first hit wins):
 
 Every check prints a one-line ✓/✗/⚠ result; the summary drives the exit
 code — any critical check failing exits 1. Warnings (installed impeccable
-version differing from the tested baseline, a missing optional UUPM
-search.py, a missing DESIGN.md) never fail; a UUPM contract probe that runs
-but violates the shared bridge contract is a failure.
+version differing from the tested baseline, a UUPM search.py found at a
+drifted fallback path, a missing DESIGN.md) never fail; a UUPM search.py
+that is missing entirely, ambiguous across multiple candidates, or fails the
+shared bridge contract probe is a critical failure.
 
 Pure standard library (stdlib only). Python 3.8+.
 
@@ -192,6 +193,45 @@ def _resolve_detector(imp):
     if alt:
         return alt, "detect-antipatterns.mjs found at %s (searched $IMP_HOME)" % alt
     return None, None
+
+
+def _find_all_basenames(root, basename):
+    """All files with the given basename under root (follows symlinks,
+    guards against symlink cycles)."""
+    found = []
+    visited = set()
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=True):
+        key = _inode(dirpath)
+        if key is not None:
+            if key in visited:
+                dirnames[:] = []
+                continue
+            visited.add(key)
+        if basename in filenames:
+            found.append(os.path.join(dirpath, basename))
+    return sorted(found)
+
+
+def _resolve_search_py(uupm):
+    """Locate UUPM's search.py. The standard ``scripts/search.py`` wins; on a
+    miss, search $UUPM_HOME for a fallback (upstream may have moved the file).
+
+    Returns (path, status, detail) with status one of:
+    ``standard``  — found at the expected path;
+    ``fallback``  — exactly one candidate elsewhere (detail = its path);
+    ``ambiguous`` — multiple candidates, no reliable way to pick the entry
+                    (detail = comma-joined candidates);
+    ``missing``   — no search.py anywhere under $UUPM_HOME.
+    """
+    std = os.path.join(uupm, "scripts", "search.py")
+    if os.path.isfile(std):
+        return std, "standard", None
+    cands = _find_all_basenames(uupm, "search.py")
+    if len(cands) == 1:
+        return cands[0], "fallback", cands[0]
+    if len(cands) > 1:
+        return None, "ambiguous", ", ".join(cands)
+    return None, "missing", None
 
 
 def _probe_uupm_contract(search_py):
@@ -375,11 +415,24 @@ def main(argv=None):
     if uupm is None:
         emit(4, "warn", "ui-ux-pro-max not resolved - search.py probe skipped")
     else:
-        search_py = os.path.join(uupm, "scripts", "search.py")
-        if not os.path.isfile(search_py):
-            emit(4, "warn",
-                 "%s missing - real contract probe skipped (optional)" % search_py)
+        search_py, search_status, search_detail = _resolve_search_py(uupm)
+        if search_status == "missing":
+            emit(4, "fail",
+                 "scripts/search.py missing and no search.py found anywhere "
+                 "under %s - incomplete ui-ux-pro-max install: ZedUI Phase 0 "
+                 "requires search.py (reinstall per zedui README/SETUP)" % uupm)
+            critical_fail = True
+        elif search_status == "ambiguous":
+            emit(4, "fail",
+                 "scripts/search.py missing and multiple search.py candidates "
+                 "found under %s (%s) - cannot determine the real entry; "
+                 "refusing to guess" % (uupm, search_detail))
+            critical_fail = True
         else:
+            if search_status == "fallback":
+                emit(4, "warn",
+                     "scripts/search.py not at the expected path; using %s "
+                     "(upstream path drift)" % search_detail)
             ok, res = _probe_uupm_contract(search_py)
             if ok:
                 emit(4, "ok",

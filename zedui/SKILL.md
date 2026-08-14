@@ -24,7 +24,7 @@ description: 项目级 UI 规范编排工作流。项目开局时用 UI-UX-Pro-M
 Phase 0 开局：提问 → UUPM 出方案 → 用户确认 → 桥接脚本生成 DESIGN.md
 Phase 1 生产：按页面类型路由 → Taste / interface-design / UUPM 兜底，全部以 DESIGN.md 为规范
 Phase 2 审查：context 引导 → critique（A/B 隔离评审）→ audit → ZedUI 硬门禁 → 修复回流 → 复评
-迭代期：任何 UI 变更都走 Phase 1 → Phase 2；规范演进只通过修改 DESIGN.md frontmatter
+迭代期：任何 UI 变更都走 Phase 1 → Phase 2；token 类规范演进通过修改 DESIGN.md frontmatter；marketing/product dials 按 Phase 3 更新 DESIGN.md Overview 的 dial 表
 ```
 
 ---
@@ -217,7 +217,7 @@ node "$IMP_HOME/scripts/context.mjs" --target <当前页面/组件路径>
 - **Assessment A（主观设计判断）必须先于任何 detector 结果完成**——detector 输出是确定性的，但它会锚定设计判断（上游明文规定）。因此编排层**不得在 critique 之前把 detector 扫描结果灌进上下文**；顺序永远是 critique 在前、硬门禁复核在后。
 - **A 与 B 必须是两个互不可见的隔离子代理**（环境支持 sub-agent 时这是 mandatory，不是建议）；detector 与浏览器证据由 **Assessment B 自己运行**，父上下文不重跑。降级为单上下文必须按上游要求挂 `⚠️ DEGRADED` 横幅自曝。
 
-产物：Nielsen 启发式 40 分制 + P0-P3 问题清单，快照存 `.impeccable/critique/`（critique 自带 trend，复评时对比）。
+产物：Nielsen 10 项启发式按 Impeccable 当前 critique 协议与实际适用性计分——全部 10 项适用时满分 /40；某项对当前页面确实不适用时可按上游协议标 n/a，分母按 applicable maximum 重算（如 8 项适用为 /32）。评分细节始终以 Impeccable 自己的 critique 协议为准，zedui 只做编排、不写死分母。同时产出 P0-P3 问题清单，快照存 `.impeccable/critique/`（critique 自带 trend，复评时对比）。
 
 ### 2.2 audit 技术审计
 
