@@ -150,6 +150,11 @@ def _read(path):
         return fh.read()
 
 
+def _write(path, text):
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
 def _fm_and_body(text):
     """Split a generated DESIGN.md into (frontmatter, body).
 
@@ -196,7 +201,9 @@ class TestGoldenJsonToDesignMd(unittest.TestCase):
             self.assertIn('dark_background: "#0B1120"', fm)
             # typography section: heading/body/scale
             self.assertIn('fontFamily: "EB Garamond, Noto Serif SC"', fm)
-            self.assertIn('fontSize: "32px"', fm)
+            # no per-role fontSize: sizes derive from scale.2xl/scale.base by
+            # convention (a second copy would go stale after a scale edit)
+            self.assertNotIn("fontSize", fm)
             self.assertIn('    base: "16px"', fm)
             self.assertIn('    2xl: "32px"', fm)
             # rounded / spacing sections
@@ -585,8 +592,34 @@ class TestValidationErrors(unittest.TestCase):
                  "--type-scale", "12px,14px,16px,20px,24px",
                  "--marketing-dials", "2,5,7"])
             self.assertEqual(rc, 1)
-            self.assertIn("at least 6 steps", se)
+            self.assertIn("scale.2xl", se)
             self.assertFalse(os.path.exists(os.path.join(tmp, "short.md")))
+
+    def test_from_design_missing_color_role_fails(self):
+        """Phase 3 hand edits face the SAME contract strength as Phase 0:
+        deleting a required color from the frontmatter must block re-sync."""
+        with tempfile.TemporaryDirectory() as tmp:
+            md = _gen_md(tmp)
+            text = _read(md)
+            self.assertIn('  accent: "#F59E0B"', text)
+            _write(md, text.replace('  accent: "#F59E0B"\n', ""))
+            rc, _so, se = run_script(
+                ["--from-design", md, "--tokens-css", os.path.join(tmp, "t.css")])
+            self.assertEqual(rc, 1)
+            self.assertIn("colors.accent", se)
+
+    def test_from_design_missing_base_step_fails(self):
+        """Dropping scale.base from the frontmatter must block re-sync
+        (heading/body sizes derive from scale.2xl / scale.base)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            md = _gen_md(tmp)
+            text = _read(md)
+            self.assertIn('    base: "16px"', text)
+            _write(md, text.replace('    base: "16px"\n', ""))
+            rc, _so, se = run_script(
+                ["--from-design", md, "--tokens-css", os.path.join(tmp, "t.css")])
+            self.assertEqual(rc, 1)
+            self.assertIn("scale.base", se)
 
     def test_invalid_css_key_from_design_fails(self):
         with tempfile.TemporaryDirectory() as tmp:

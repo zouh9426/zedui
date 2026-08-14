@@ -27,15 +27,20 @@ Usage:
                    frontmatter, then re-sync body + tokens.css so the document
                    can never disagree with itself.
     --allow-incomplete   accept missing fields/dials and write "TBD"
-                   placeholders. Without it the script fails closed on
-                   incomplete input (missing colors/fonts/dials/short scales).
+                   placeholders (both modes). Without it the script fails
+                   closed on incomplete input (missing colors/fonts/dials/
+                   short scales) — the same contract strength applies to
+                   --from-design re-syncs, so Phase 3 hand edits cannot
+                   silently weaken the spec.
 
 DESIGN.md format (zedui-design-schema-v1): the YAML frontmatter is the single
 source of truth for every token value. Token tables in the markdown body live
 inside ``<!-- zedui:generated:<name>:start/end -->`` markers and are derived
 views — ``--from-design`` rebuilds them from the frontmatter. Everything
 outside the markers (style intent, strategy notes, ## Components) is
-human/agent-maintained and is never touched by this script.
+human/agent-maintained and is never touched by this script. Heading/body font
+SIZES are not stored per role: they derive from scale.2xl / scale.base by
+convention, so a scale edit can never leave a stale duplicate behind.
 """
 
 import argparse
@@ -162,40 +167,87 @@ def _dials_complete(d):
     return d is not None and len(d) == 3 and all(v is not None for v in d)
 
 
-def validate_design_system(ds, mkt, prod, type_scale):
+def validate_token_contract(colors, heading_font, body_font, type_scale,
+                            rounded_scale, spacing_scale):
+    """The single fail-closed token contract, shared by both modes.
+
+    Phase 0 landing (JSON) and Phase 3 re-sync (--from-design) run the SAME
+    checks — hand edits during Phase 3 are the easiest way to break
+    DESIGN.md, so the re-sync path must not be weaker than first generation.
+
+    Returns a list of human-readable problems; empty means OK.
+    """
+    errors = []
+
+    def _map_errors(label, m):
+        if not isinstance(m, dict) or not m:
+            errors.append("%s is missing or empty" % label)
+            return
+        for k, v in m.items():
+            if k == "notes":
+                continue
+            if not isinstance(v, str) or not v.strip():
+                errors.append("%s.%s is not a scalar string (unquoted value? quote "
+                              "strings, e.g. \"%s: \\\"#0066FF\\\"\")" % (label, k, k))
+                continue
+            try:
+                _css_name_part(k)
+            except ValueError as e:
+                errors.append("%s: %s" % (label, e))
+            if v.strip() != "TBD":
+                try:
+                    _css_value(v)
+                except ValueError as e:
+                    errors.append("%s.%s: %s" % (label, k, e))
+
+    _map_errors("colors", colors)
+    if isinstance(colors, dict):
+        for role in COLOR_ROLES:
+            v = colors.get(role)
+            if not isinstance(v, str) or not v.strip() or v.strip() == "TBD":
+                errors.append("colors.%s is missing — confirm and add '%s' during "
+                              "Phase 0.3 before landing (older UUPM copies may not "
+                              "emit it)" % (role, role))
+    if heading_font is None or not str(heading_font).strip() or str(heading_font).strip() == "TBD":
+        errors.append("typography.heading font is missing")
+    if body_font is None or not str(body_font).strip() or str(body_font).strip() == "TBD":
+        errors.append("typography.body font is missing")
+    _map_errors("typography.scale", type_scale)
+    if isinstance(type_scale, dict):
+        for tok in ("base", "2xl"):
+            v = type_scale.get(tok)
+            if not isinstance(v, str) or not v.strip() or v.strip() == "TBD":
+                errors.append("typography.scale.%s is missing — heading/body sizes "
+                              "derive from scale.2xl / scale.base by convention" % tok)
+    _map_errors("rounded", rounded_scale)
+    _map_errors("spacing", spacing_scale)
+    return errors
+
+
+def validate_design_system(ds, mkt, prod, type_scale, rounded_scale, spacing_scale):
     """Fail-closed validation for the Phase 0 landing path.
 
     Returns a list of human-readable problems; empty means the DESIGN.md is
     safe to write. The point: a syntactically valid DESIGN.md full of "TBD"
     is worse than no file, because the workflow treats "DESIGN.md exists" as
-    "the spec was confirmed".
+    "the spec was confirmed". Token checks delegate to the shared contract
+    (validate_token_contract); this wrapper adds the landing-only checks
+    (project name, confirmed dials).
     """
     errors = []
     proj = ds.get("project_name")
     if proj is None or not str(proj).strip():
         errors.append("project_name is missing")
-    colors = ds.get("colors")
-    if not isinstance(colors, dict) or not colors:
-        errors.append("colors map is missing")
-    else:
-        for role in COLOR_ROLES:
-            v = colors.get(role)
-            if v is None or not str(v).strip():
-                errors.append(
-                    "colors.%s is missing (UUPM emits 10 roles; confirm and add "
-                    "'%s' during Phase 0.3 before landing)" % (role, role))
     typo = ds.get("typography")
+    heading_font = body_font = None
     if not isinstance(typo, dict):
         errors.append("typography is missing")
     else:
-        if not str(typo.get("heading") or "").strip():
-            errors.append("typography.heading font is missing")
-        if not str(typo.get("body") or "").strip():
-            errors.append("typography.body font is missing")
-    if "base" not in type_scale or "2xl" not in type_scale:
-        errors.append(
-            "type scale needs at least 6 steps (xs..2xl) so body/heading sizes "
-            "can be derived; got %d step(s)" % len(type_scale))
+        heading_font = typo.get("heading")
+        body_font = typo.get("body")
+    errors.extend(validate_token_contract(
+        ds.get("colors"), heading_font, body_font,
+        type_scale, rounded_scale, spacing_scale))
     if not _dials_complete(mkt):
         errors.append("marketing dials missing: pass --marketing-dials V,M,D "
                       "(values confirmed in Phase 0.3)")
@@ -205,42 +257,38 @@ def validate_design_system(ds, mkt, prod, type_scale):
     return errors
 
 
-def validate_frontmatter_tokens(fm):
+def validate_frontmatter_tokens(fm, strict=True):
     """Validate the parsed DESIGN.md frontmatter for --from-design mode.
 
-    Besides presence, every token value must be a scalar: a nested map where a
-    value belongs means a hand edit broke the subset (classic case: an
-    unquoted hex like ``cta: #0066FF`` — the ``#`` starts a YAML comment, the
-    value vanishes, and the line parses as an empty map).
+    strict=True (default) applies the full shared token contract — the same
+    strength as Phase 0 landing (11 required color roles, heading/body fonts,
+    base/2xl steps, scalar values, CSS-safe keys/values). strict=False only
+    requires the four token maps to exist (--allow-incomplete drafts).
     """
-    errors = []
-    for key in ("colors", "rounded", "spacing"):
-        m = fm.get(key)
-        if not isinstance(m, dict) or not m:
-            errors.append("frontmatter.%s is missing or empty" % key)
-            continue
-        for k, v in m.items():
-            if not isinstance(v, str):
-                errors.append("frontmatter.%s.%s is not a scalar (unquoted value? "
-                              "strings must be quoted, e.g. \"%s: \\\"#0066FF\\\"\")"
-                              % (key, k, k))
+    if not strict:
+        errors = []
+        for key in ("colors", "typography", "rounded", "spacing"):
+            if not isinstance(fm.get(key), dict) or not fm.get(key):
+                errors.append("frontmatter.%s is missing or empty" % key)
+        return errors
     typo = fm.get("typography")
-    if not isinstance(typo, dict):
-        errors.append("frontmatter.typography is missing")
-    else:
-        for role in ("heading", "body"):
-            r = typo.get(role)
-            if not isinstance(r, dict) or not str(r.get("fontFamily") or "").strip():
-                errors.append("frontmatter.typography.%s.fontFamily is missing" % role)
+    heading = body = {}
+    scale = None
+    if isinstance(typo, dict):
+        if isinstance(typo.get("heading"), dict):
+            heading = typo["heading"]
+        if isinstance(typo.get("body"), dict):
+            body = typo["body"]
         scale = typo.get("scale")
-        if not isinstance(scale, dict) or not scale:
-            errors.append("frontmatter.typography.scale is missing or empty")
-        else:
-            for k, v in scale.items():
-                if not isinstance(v, str):
-                    errors.append("frontmatter.typography.scale.%s is not a scalar "
-                                  "(unquoted value?)" % k)
-    return errors
+    errors = validate_token_contract(
+        fm.get("colors"),
+        heading.get("fontFamily"),
+        body.get("fontFamily"),
+        scale,
+        fm.get("rounded"),
+        fm.get("spacing"),
+    )
+    return ["frontmatter." + e for e in errors]
 
 
 # --------------------------------------------------------------------------
@@ -272,10 +320,11 @@ def build_frontmatter(ds, rounded_scale, type_scale, spacing_scale):
     lines.append("typography:")
     lines.append("  heading:")
     lines.append("    fontFamily: %s" % _q(typo.get("heading")))
-    lines.append("    fontSize: %s" % _q(type_scale.get("2xl")))
     lines.append("  body:")
     lines.append("    fontFamily: %s" % _q(typo.get("body")))
-    lines.append("    fontSize: %s" % _q(type_scale.get("base")))
+    # NOTE: no fontSize here by design — heading/body sizes derive from
+    # scale.2xl / scale.base by convention. Recording them again would be a
+    # second copy of the same fact (stale after any scale edit).
     # Font-loading hints are token-adjacent: if the heading/body fonts change
     # in the frontmatter, these go stale unless they live in the SSOT too.
     lines.append("  google_fonts_url: %s" % _q(typo.get("google_fonts_url")))
@@ -872,7 +921,7 @@ def main(argv=None):
             fm = parse_design_frontmatter(design_text)
         except ValueError as e:
             _fail("cannot parse frontmatter: %s" % e)
-        errors = validate_frontmatter_tokens(fm)
+        errors = validate_frontmatter_tokens(fm, strict=not args.allow_incomplete)
         if errors:
             _fail_list("frontmatter is incomplete; fix these before re-syncing", errors)
         typo = fm["typography"]
@@ -948,7 +997,7 @@ def main(argv=None):
         _fail(str(e))
 
     if not args.allow_incomplete:
-        errors = validate_design_system(ds, mkt, prod, type_scale)
+        errors = validate_design_system(ds, mkt, prod, type_scale, rounded_scale, spacing_scale)
         if errors:
             _fail_list("incomplete design system (re-run with --allow-incomplete to "
                        "land TBD placeholders anyway)", errors)

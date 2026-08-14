@@ -4,13 +4,26 @@
 Impeccable's design-system detector compares font/color/radius/font-size
 against DESIGN.md, but NOT spacing: ``padding: 17px`` is never flagged
 upstream. This script closes that gap. It scans CSS declarations of
-spacing-like properties — margin/padding/gap/inset and their directional
-forms, plus top/right/bottom/left — and reports any value that contains a
-length literal (17px, 1.5rem, 50%, ...) without a var() reference.
+spacing-like properties — margin/padding/gap/inset (physical *and* logical
+directional forms), plus top/right/bottom/left — and reports any value that
+carries a length literal (17px, 1.5rem, 50%, ...) outside a var() reference.
+``var(...)`` references are stripped whole (nested parens handled with a
+simple balance count) before the remaining value is tokenized, so
+``padding: var(--space-sm) 17px`` and ``gap: calc(var(--space-md) + 3px)``
+are caught while ``gap: calc(var(--space-md) * 2)`` stays clean. Bare
+non-zero numbers (React inline styles such as ``style={{ padding: 17 }}``)
+are findings too; ``0`` and CSS keywords stay exempt. Tailwind
+arbitrary-value spacing classes (``p-[17px]``, ``mt-[-8px]``, ``-m-[4px]``,
+``inset-x-[4px]``, ...) are flagged; non-spacing arbitrary classes
+(``w-[300px]``, ``text-[17px]``, ``leading-[1.1]``, ``min-h-[100dvh]``,
+``bg-[#fff]``, ...) and standard staircase classes (``p-4``, ``mt-2``) are
+not.
 
 The token definition layer is exempt: a file whose header carries the
 "GENERATED FILE — DO NOT EDIT BY HAND" marker (tokens.css and friends) is
 skipped entirely; --exclude accepts explicit globs such as 'tokens.css'.
+Directory walks prune DEFAULT_PRUNE_DIRS (node_modules, .next, dist, build,
+coverage, vendor, out, .nuxt, .cache, __pycache__) in addition to .git.
 
 Pure standard library (stdlib only). Python 3.8+.
 
@@ -41,19 +54,37 @@ import sys
 
 DEFAULT_EXTS = [".css", ".scss", ".less", ".html", ".vue", ".jsx", ".tsx"]
 
+# Directories pruned during recursive walks, in addition to .git. Only
+# basenames are compared, so these names never match user source dirs.
+DEFAULT_PRUNE_DIRS = frozenset([
+    ".git",
+    "node_modules", ".next", "dist", "build", "coverage",
+    "vendor", "out", ".nuxt", ".cache", "__pycache__",
+])
+
 SPACING_PROPERTIES = frozenset([
     "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
+    "margin-inline", "margin-inline-start", "margin-inline-end",
+    "margin-block", "margin-block-start", "margin-block-end",
     "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
+    "padding-inline", "padding-inline-start", "padding-inline-end",
+    "padding-block", "padding-block-start", "padding-block-end",
     "gap", "row-gap", "column-gap",
     "inset", "inset-top", "inset-right", "inset-bottom", "inset-left",
+    "inset-inline", "inset-inline-start", "inset-inline-end",
+    "inset-block", "inset-block-start", "inset-block-end",
     "top", "right", "bottom", "left",
 ])
 
 # A length literal: optional sign, integer or decimal digits, a CSS unit.
+# Group 1 captures the numeric part (so zero literals can be exempted).
 LENGTH_LITERAL_RE = re.compile(
-    r"(?<![\w.-])-?(?:\d+(?:\.\d*)?|\.\d+)(?:px|rem|em|vh|vw|%)",
+    r"(?<![\w.-])(-?(?:\d+(?:\.\d*)?|\.\d+))(?:px|rem|em|vh|vw|%)",
     re.IGNORECASE,
 )
+
+# A bare number with no unit at all (React inline styles: `padding: 17`).
+BARE_NUMBER_RE = re.compile(r"-?(?:\d+(?:\.\d*)?|\.\d+)")
 
 # Whole-component exemptions: zero lengths and CSS keywords.
 ZERO_AND_KEYWORD_EXEMPT = frozenset([
@@ -70,17 +101,114 @@ GENERATED_HEADER_RE = re.compile(r"GENERATED FILE[^\n]{0,40}DO NOT EDIT BY HAND"
 # spacing-property filter below decides what actually counts.
 DECL_RE = re.compile(r"([A-Za-z-]+)\s*:\s*([^;{}\r\n,]+)")
 
+# Tailwind arbitrary-value spacing prefixes. Only these are flagged when they
+# appear as `prefix-[length-literal]`. Non-spacing prefixes (w-, h-, text-,
+# leading-, min-h-, max-w-, bg-, ...) are intentionally absent so arbitrary
+# classes built on them pass through untouched.
+TAILWIND_SPACING_PREFIXES = (
+    "px", "py", "pt", "pr", "pb", "pl", "p",
+    "mx", "my", "mt", "mr", "mb", "ml", "m",
+    "gap-x", "gap-y", "gap",
+    "space-x", "space-y",
+    "inset-x", "inset-y", "inset",
+    "top", "right", "bottom", "left",
+    "scroll-mx", "scroll-my", "scroll-mt", "scroll-mr",
+    "scroll-mb", "scroll-ml", "scroll-m",
+    "scroll-px", "scroll-py", "scroll-pt", "scroll-pr",
+    "scroll-pb", "scroll-pl", "scroll-p",
+)
+
+ARBITRARY_SPACING_RE = re.compile(
+    r"(?<![\w-])-?(?:%s)-\[([^\[\]]*)\]"
+    % "|".join(sorted(TAILWIND_SPACING_PREFIXES, key=len, reverse=True)),
+    re.IGNORECASE,
+)
+
+
+def _strip_var_refs(value):
+    """Return *value* with every ``var(...)`` reference removed.
+
+    Nested parentheses (``var(--a, var(--b))``) are handled with a simple
+    open-paren balance count; the match is case-insensitive (``VAR(...)`` is
+    legal CSS). An unterminated ``var(`` consumes the rest of the value.
+    """
+    out = []
+    i = 0
+    n = len(value)
+    low = value.lower()
+    while True:
+        j = low.find("var(", i)
+        if j == -1:
+            out.append(value[i:])
+            return "".join(out)
+        out.append(value[i:j])
+        depth = 1
+        k = j + 4
+        while k < n and depth:
+            if low[k] == "(":
+                depth += 1
+            elif low[k] == ")":
+                depth -= 1
+            k += 1
+        i = k
+
+
+def _strip_quotes(comp):
+    """Remove a matched pair of surrounding quotes (JSX ``"17"`` -> ``17``)."""
+    if len(comp) >= 2 and comp[0] in "\"'" and comp[-1] == comp[0]:
+        return comp[1:-1]
+    return comp
+
+
+def _literal_is_zero(match):
+    try:
+        return float(match.group(1)) == 0
+    except ValueError:
+        return False
+
+
+def _has_nonzero_length_literal(comp):
+    """True when *comp* contains a length literal whose value is not zero."""
+    for m in LENGTH_LITERAL_RE.finditer(comp):
+        if not _literal_is_zero(m):
+            return True
+    return False
+
+
+def _is_nonzero_bare_number(comp):
+    """True when the whole token is a bare number that is not zero."""
+    if not BARE_NUMBER_RE.fullmatch(comp):
+        return False
+    try:
+        return float(comp) != 0
+    except ValueError:
+        return False
+
+
+def _token_is_bad(comp):
+    """True when a single value token carries a flaggable literal."""
+    comp = _strip_quotes(comp)
+    if not comp:
+        return False
+    if comp in ZERO_AND_KEYWORD_EXEMPT:
+        return False
+    if _is_nonzero_bare_number(comp):
+        return True
+    return _has_nonzero_length_literal(comp)
+
 
 def _has_bad_literal(value):
-    """True when the value carries a non-exempt spacing length literal."""
-    if "var(" in value:
-        return False
-    for comp in re.split(r"[\s,]+", value.strip()):
+    """True when the value carries a non-exempt spacing length literal.
+
+    var(...) references are stripped whole first, so a pure-token value like
+    ``var(--space-md)`` or ``calc(var(--space-md) * 2)`` is clean, while
+    ``calc(var(--space-md) + 3px)`` still trips on the ``3px``.
+    """
+    stripped = _strip_var_refs(value)
+    for comp in re.split(r"[\s,]+", stripped.strip()):
         if not comp:
             continue
-        if comp in ZERO_AND_KEYWORD_EXEMPT:
-            continue
-        if LENGTH_LITERAL_RE.search(comp):
+        if _token_is_bad(comp):
             return True
     return False
 
@@ -109,6 +237,21 @@ def _iter_clean_lines(text):
         yield lineno, line
 
 
+def _tailwind_findings(line):
+    """Yield Tailwind arbitrary-value spacing classes found on one line.
+
+    Every whitespace token of the comment-stripped line is checked, which
+    covers class="..." and className="..." attributes, JSX template strings
+    and dynamic class expressions alike. Only the spacing prefixes above
+    match; ``w-[300px]``, ``text-[17px]``, ``leading-[1.1]`` and standard
+    staircase classes like ``p-4`` (no ``-[...]``) pass.
+    """
+    for tok in line.split():
+        m = ARBITRARY_SPACING_RE.search(tok)
+        if m and _has_nonzero_length_literal(m.group(1)):
+            yield m.group(0)
+
+
 def lint_text(text):
     """Return a list of (lineno, property, value) findings in the text."""
     findings = []
@@ -120,6 +263,8 @@ def lint_text(text):
             value = m.group(2).strip()
             if _has_bad_literal(value):
                 findings.append((lineno, prop, value))
+        for cls in _tailwind_findings(line):
+            findings.append((lineno, "class", cls))
     return findings
 
 
@@ -143,7 +288,8 @@ def _inode(path):
 
 def walk_files(target, exts):
     """Yield files under target; directories walked recursively (symlinks
-    followed, symlink cycles and .git pruned, extension-filtered)."""
+    followed, symlink cycles guarded, DEFAULT_PRUNE_DIRS pruned,
+    extension-filtered)."""
     visited = set()
     for root, dirs, files in os.walk(target, followlinks=True):
         key = _inode(root)
@@ -152,7 +298,7 @@ def walk_files(target, exts):
                 dirs[:] = []
                 continue
             visited.add(key)
-        dirs[:] = [d for d in dirs if d != ".git"]
+        dirs[:] = [d for d in dirs if d not in DEFAULT_PRUNE_DIRS]
         for f in files:
             if exts and os.path.splitext(f)[1].lower() not in exts:
                 continue

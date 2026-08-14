@@ -4,9 +4,10 @@
 Verifies the full upstream chain zedui's workflow depends on: the five
 upstream skills resolve to real installs (matched by frontmatter ``name:``,
 case-insensitive, not by directory name, following symlinks), impeccable's
-version and key scripts match the tested baseline, UUPM's search.py contract
-holds, zedui's own scripts compile, and the project's DESIGN.md (if any) is
-in sync with its tokens.css.
+version and detection scripts hold against the tested baseline, UUPM's
+search.py --design-system --json contract is probed for real, zedui's own
+scripts compile, and the project's DESIGN.md (if any) is in sync with its
+tokens.css AND its body generated blocks (derived views of the frontmatter).
 
 Skill resolution candidate order (project-level first, first hit wins):
     <project-root>/.agents/skills/   ~/.agents/skills/
@@ -14,7 +15,8 @@ Skill resolution candidate order (project-level first, first hit wins):
 
 Every check prints a one-line ✓/✗/⚠ result; the summary drives the exit
 code — any critical check failing exits 1. Warnings (impeccable version
-drift, UUPM search.py hiccup) never fail.
+drift, a missing optional UUPM search.py, a missing DESIGN.md) never fail;
+a UUPM contract probe that runs but violates the contract is a failure.
 
 Pure standard library (stdlib only). Python 3.8+.
 
@@ -32,6 +34,7 @@ Exit codes:
 """
 
 import argparse
+import json
 import os
 import py_compile
 import re
@@ -50,8 +53,22 @@ TESTED_IMPECCABLE_VERSION = "4.0.4"
 # (expected relative path, basename to search for when the path moved)
 IMPECCABLE_SCRIPTS = (
     ("scripts/context.mjs", "context.mjs"),
-    ("scripts/detector/detect-antipatterns.mjs", "detect-antipatterns.mjs"),
 )
+
+# Detector entry preference: scripts/detect.mjs is the current public facade;
+# scripts/detector/detect-antipatterns.mjs is the compat fallback; last resort
+# is a basename search across $IMP_HOME (different versions move the file).
+DETECTOR_PREFERRED = (
+    "scripts/detect.mjs",
+    "scripts/detector/detect-antipatterns.mjs",
+)
+
+# Minimal real probe of UUPM's search.py --design-system --json contract.
+UUPM_PROBE_ARGS = (
+    "contract probe", "--design-system", "-p", "DoctorProbe",
+    "--json", "--variance", "3", "--motion", "4", "--density", "5",
+)
+UUPM_PROBE_TIMEOUT = 30
 
 ZEDUI_SCRIPTS = ("uupm_to_design.py", "token_lint.py")
 
@@ -152,6 +169,63 @@ def _find_basename(root, basename):
     return None
 
 
+def _resolve_detector(imp):
+    """Locate impeccable's detection entry: preferred -> compat fallback ->
+    basename search within $IMP_HOME. Returns (path, note) or (None, None)."""
+    for rel in DETECTOR_PREFERRED:
+        p = os.path.join(imp, rel)
+        if os.path.isfile(p):
+            if rel == "scripts/detect.mjs":
+                return p, "scripts/detect.mjs (public facade)"
+            return p, "scripts/detector/detect-antipatterns.mjs (compat fallback)"
+    alt = _find_basename(imp, "detect-antipatterns.mjs")
+    if alt:
+        return alt, "detect-antipatterns.mjs found at %s (searched $IMP_HOME)" % alt
+    return None, None
+
+
+def _probe_uupm_contract(search_py):
+    """Run a minimal real probe of search.py --design-system --json.
+
+    Runs with cwd in a throwaway temp dir so nothing lands in the user's repo.
+    Returns (True, len(colors)) on success, or (False, reason) on failure
+    (timeout / non-zero exit / invalid JSON / missing contract fields).
+    """
+    try:
+        with tempfile.TemporaryDirectory(prefix="zedui-uupm-probe-") as td:
+            proc = subprocess.run(
+                [sys.executable, search_py] + list(UUPM_PROBE_ARGS),
+                capture_output=True, timeout=UUPM_PROBE_TIMEOUT,
+                cwd=td, text=True)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return False, "probe could not run: %s" % e
+    if proc.returncode != 0:
+        detail = (proc.stderr or "").strip().splitlines()
+        detail = detail[0][:160] if detail else "no stderr"
+        return False, "probe exited %d (%s)" % (proc.returncode, detail)
+    try:
+        data = json.loads(proc.stdout or "{}")
+    except ValueError as e:
+        return False, "probe output is not valid JSON: %s" % e
+    if not isinstance(data, dict) or not isinstance(data.get("design_system"), dict):
+        return False, "probe JSON lacks an outer 'design_system' object"
+    ds = data["design_system"]
+    colors = ds.get("colors")
+    if not isinstance(colors, dict) or not colors:
+        return False, "design_system.colors is missing or empty"
+    for role in ("primary", "background", "foreground"):
+        if role not in colors:
+            return False, "design_system.colors is missing role '%s'" % role
+    typo = ds.get("typography")
+    if not isinstance(typo, dict) or "heading" not in typo or "body" not in typo:
+        return False, "design_system.typography is missing heading/body"
+    if "spacing_scale" not in ds:
+        return False, "design_system.spacing_scale is missing"
+    if "dials" not in ds:
+        return False, "design_system.dials is missing"
+    return True, len(colors)
+
+
 def _find_tokens_css(project_root):
     """All tokens.css under the project root (skipping .git/node_modules)."""
     found = []
@@ -220,19 +294,28 @@ def main(argv=None):
     print("")
     print("[2/6] impeccable version")
     imp = homes.get("impeccable")
+    imp_version = None
+    imp_contract = "unknown"
+    emit(2, "ok", "tested baseline: %s" % TESTED_IMPECCABLE_VERSION)
     if imp is None:
-        emit(2, "warn", "impeccable not resolved - version check skipped")
+        emit(2, "warn", "impeccable not resolved - installed version unknown")
     else:
         version = _read_frontmatter_field(os.path.join(imp, "SKILL.md"), "version")
         if version is None:
-            emit(2, "warn", "impeccable SKILL.md has no version field")
+            emit(2, "warn",
+                 "installed version: unknown (SKILL.md has no version field)")
         elif version.strip() == TESTED_IMPECCABLE_VERSION:
-            emit(2, "ok", "impeccable version %s matches the tested baseline"
+            imp_version = version.strip()
+            imp_contract = "compatible"
+            emit(2, "ok", "installed version: %s matches the tested baseline"
                  % version.strip())
         else:
+            imp_version = version.strip()
             emit(2, "warn",
-                 "impeccable version %s differs from the tested %s - "
+                 "installed version: %s differs from the tested %s - "
                  "verify upstream drift" % (version.strip(), TESTED_IMPECCABLE_VERSION))
+        emit(2, "ok" if imp_contract == "compatible" else "warn",
+             "contract: %s" % imp_contract)
 
     # ---- [3/6] impeccable scripts ------------------------------------------
     print("")
@@ -252,32 +335,38 @@ def main(argv=None):
                 emit(3, "fail",
                      "%s missing and not found anywhere under %s" % (rel, imp))
                 critical_fail = True
+        det, det_note = _resolve_detector(imp)
+        if det is None:
+            emit(3, "fail",
+                 "detector entry missing - no scripts/detect.mjs, no "
+                 "scripts/detector/detect-antipatterns.mjs, and no "
+                 "detect-antipatterns.mjs anywhere under %s" % imp)
+            critical_fail = True
+        else:
+            emit(3, "ok", "detector entry: %s" % det_note)
 
     # ---- [4/6] UUPM search.py contract --------------------------------------
     print("")
     print("[4/6] UUPM search.py contract")
     uupm = homes.get("ui-ux-pro-max")
     if uupm is None:
-        emit(4, "warn", "ui-ux-pro-max not resolved - search.py check skipped")
+        emit(4, "warn", "ui-ux-pro-max not resolved - search.py probe skipped")
     else:
         search_py = os.path.join(uupm, "scripts", "search.py")
         if not os.path.isfile(search_py):
-            emit(4, "warn", "%s missing (optional check)" % search_py)
+            emit(4, "warn",
+                 "%s missing - real contract probe skipped (optional)" % search_py)
         else:
-            try:
-                proc = subprocess.run([sys.executable, search_py, "--help"],
-                                      capture_output=True, timeout=30)
-            except (OSError, subprocess.TimeoutExpired) as e:
-                emit(4, "warn",
-                     "%s exists but `--help` could not run: %s (optional check)"
-                     % (search_py, e))
+            ok, res = _probe_uupm_contract(search_py)
+            if ok:
+                emit(4, "ok",
+                     "UUPM contract probe passed: design_system.colors has "
+                     "%d keys" % res)
             else:
-                if proc.returncode == 0:
-                    emit(4, "ok", "%s exists and `--help` runs" % search_py)
-                else:
-                    emit(4, "warn",
-                         "%s exists but `--help` failed (exit %d) - optional check"
-                         % (search_py, proc.returncode))
+                emit(4, "fail",
+                     "UUPM contract probe failed: %s - uupm_to_design.py "
+                     "cannot trust this search.py" % res)
+                critical_fail = True
 
     # ---- [5/6] zedui scripts -------------------------------------------------
     print("")
@@ -338,6 +427,39 @@ def main(argv=None):
                      "found %d start / %d end" % (len(starts), len(ends)))
                 critical_fail = True
 
+            # Rebuild the marked body blocks from the frontmatter (the SSOT)
+            # and compare byte-for-byte: a hand-edited generated table must be
+            # caught even though tokens.css below is still in sync.
+            if fm is not None and len(starts) == 4 and len(ends) == 4:
+                try:
+                    typo = fm["typography"]
+                    blocks = {
+                        "colors": utd.render_colors_block(fm["colors"]),
+                        "typography": utd.render_typography_block(
+                            (typo.get("heading") or {}).get("fontFamily"),
+                            (typo.get("body") or {}).get("fontFamily"),
+                            typo.get("google_fonts_url"),
+                            typo.get("css_import"),
+                            typo["scale"]),
+                        "spacing": utd.render_spacing_block(fm["spacing"]),
+                        "rounded": utd.render_rounded_block(fm["rounded"]),
+                    }
+                    rebuilt = utd.splice_generated_blocks(design_text, blocks)
+                except (KeyError, ValueError, TypeError) as e:
+                    emit(6, "fail", "cannot rebuild body generated blocks "
+                         "from frontmatter: %s" % e)
+                    critical_fail = True
+                else:
+                    if rebuilt == design_text:
+                        emit(6, "ok",
+                             "body generated blocks in sync with frontmatter")
+                    else:
+                        emit(6, "fail",
+                             "body generated blocks out of sync with frontmatter "
+                             "- re-run uupm_to_design.py --from-design %s "
+                             "--tokens-css <tokens.css>" % design_path)
+                        critical_fail = True
+
             tokens_list = _find_tokens_css(project_root)
             if not tokens_list:
                 emit(6, "warn", "no tokens.css found under the project root - "
@@ -382,6 +504,12 @@ def main(argv=None):
                         critical_fail = True
 
     # ---- summary ---------------------------------------------------------------
+    print("")
+    print("impeccable tested version: %s" % TESTED_IMPECCABLE_VERSION)
+    print("impeccable installed version: %s"
+          % (imp_version if imp_version
+             else "unknown (not resolved / no version field)"))
+    print("impeccable contract: %s" % imp_contract)
     print("")
     ok_n = sum(1 for _, s in results if s == "ok")
     fail_n = sum(1 for _, s in results if s == "fail")
