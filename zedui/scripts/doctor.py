@@ -5,18 +5,28 @@ Verifies the full upstream chain zedui's workflow depends on: the five
 upstream skills resolve to real installs (matched by frontmatter ``name:``,
 case-insensitive, not by directory name, following symlinks), impeccable's
 version and detection scripts hold against the tested baseline, UUPM's
-search.py --design-system --json contract is probed for real, zedui's own
-scripts compile, and the project's DESIGN.md (if any) is in sync with its
-tokens.css AND its body generated blocks (derived views of the frontmatter).
+search.py --design-system --json output is probed for real against the SAME
+contract the bridge enforces, zedui's own scripts compile, and the project's
+DESIGN.md (if any) is in sync with its tokens.css AND its body generated
+blocks (derived views of the frontmatter).
+
+This is a full-chain *installation* health check: it is deliberately stricter
+than the runtime's lazy dependency resolution (SKILL.md lets a session
+continue when a skill the current task never routes to is missing). doctor
+reports the whole chain so gaps surface before they matter. All checks run
+against the LOCALLY INSTALLED copies — an offline probe cannot know whether
+public upstream has moved; version differences are reported against the
+tested baseline in COMPATIBILITY.md, never as "upstream drift".
 
 Skill resolution candidate order (project-level first, first hit wins):
     <project-root>/.agents/skills/   ~/.agents/skills/
     ~/.kimi-code/skills/             ~/.claude/skills/   ~/.codex/skills/
 
 Every check prints a one-line ✓/✗/⚠ result; the summary drives the exit
-code — any critical check failing exits 1. Warnings (impeccable version
-drift, a missing optional UUPM search.py, a missing DESIGN.md) never fail;
-a UUPM contract probe that runs but violates the contract is a failure.
+code — any critical check failing exits 1. Warnings (installed impeccable
+version differing from the tested baseline, a missing optional UUPM
+search.py, a missing DESIGN.md) never fail; a UUPM contract probe that runs
+but violates the shared bridge contract is a failure.
 
 Pure standard library (stdlib only). Python 3.8+.
 
@@ -210,20 +220,33 @@ def _probe_uupm_contract(search_py):
     if not isinstance(data, dict) or not isinstance(data.get("design_system"), dict):
         return False, "probe JSON lacks an outer 'design_system' object"
     ds = data["design_system"]
+    # Share the bridge's schema (single source: utd.COLOR_ROLES) at the KEY
+    # level: a required role whose KEY is absent (e.g. cta on older copies)
+    # fails the probe exactly where the bridge would fail closed. Empty-string
+    # VALUES are data, not schema: UUPM legitimately leaves palette slots ''
+    # on a knowledge-base miss (Phase 0.3 confirmation fills them), so they
+    # are reported but do not fail the probe.
     colors = ds.get("colors")
     if not isinstance(colors, dict) or not colors:
         return False, "design_system.colors is missing or empty"
-    for role in ("primary", "background", "foreground"):
-        if role not in colors:
-            return False, "design_system.colors is missing role '%s'" % role
+    missing = [r for r in utd.COLOR_ROLES if r not in colors]
+    if missing:
+        return False, ("design_system.colors lacks required role key(s) %s "
+                       "(shared bridge contract, utd.COLOR_ROLES)" % ", ".join(missing))
     typo = ds.get("typography")
-    if not isinstance(typo, dict) or "heading" not in typo or "body" not in typo:
+    if not isinstance(typo, dict) or not str(typo.get("heading") or "").strip() \
+            or not str(typo.get("body") or "").strip():
         return False, "design_system.typography is missing heading/body"
     if "spacing_scale" not in ds:
         return False, "design_system.spacing_scale is missing"
     if "dials" not in ds:
         return False, "design_system.dials is missing"
-    return True, len(colors)
+    empty = [r for r in utd.COLOR_ROLES if not str(colors.get(r) or "").strip()]
+    note = ""
+    if empty:
+        note = " (%d role(s) emitted empty — normal on a knowledge-base miss; " \
+               "Phase 0.3 fills them)" % len(empty)
+    return True, "%d keys%s" % (len(colors), note)
 
 
 def _find_tokens_css(project_root):
@@ -312,8 +335,8 @@ def main(argv=None):
         else:
             imp_version = version.strip()
             emit(2, "warn",
-                 "installed version: %s differs from the tested %s - "
-                 "verify upstream drift" % (version.strip(), TESTED_IMPECCABLE_VERSION))
+                 "installed version: %s differs from the tested %s - review "
+                 "COMPATIBILITY.md before relying on it" % (version.strip(), TESTED_IMPECCABLE_VERSION))
         emit(2, "ok" if imp_contract == "compatible" else "warn",
              "contract: %s" % imp_contract)
 
@@ -360,8 +383,7 @@ def main(argv=None):
             ok, res = _probe_uupm_contract(search_py)
             if ok:
                 emit(4, "ok",
-                     "UUPM contract probe passed: design_system.colors has "
-                     "%d keys" % res)
+                     "UUPM contract probe passed: design_system.colors has %s" % res)
             else:
                 emit(4, "fail",
                      "UUPM contract probe failed: %s - uupm_to_design.py "

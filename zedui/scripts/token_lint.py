@@ -43,7 +43,8 @@ Usage:
 Exit codes:
     0  clean — no spacing-literal findings
     1  one or more findings
-    2  usage error (bad arguments / target not found)
+    2  usage error (bad arguments / target not found / unreadable input
+       files — a gate that could not read its input never reports OK)
 """
 
 import argparse
@@ -76,10 +77,12 @@ SPACING_PROPERTIES = frozenset([
     "top", "right", "bottom", "left",
 ])
 
-# A length literal: optional sign, integer or decimal digits, a CSS unit.
+# A length literal: optional sign, integer or decimal digits, a CSS unit
+# (modern viewport units included: dvh/dvw/svh/svw/lvh/lvw/vmin/vmax).
 # Group 1 captures the numeric part (so zero literals can be exempted).
 LENGTH_LITERAL_RE = re.compile(
-    r"(?<![\w.-])(-?(?:\d+(?:\.\d*)?|\.\d+))(?:px|rem|em|vh|vw|%)",
+    r"(?<![\w.-])(-?(?:\d+(?:\.\d*)?|\.\d+))"
+    r"(?:px|rem|em|dvh|dvw|svh|svw|lvh|lvw|vmin|vmax|vh|vw|%)",
     re.IGNORECASE,
 )
 
@@ -358,6 +361,7 @@ def main(argv=None):
 
     findings_total = 0
     files_flagged = 0
+    read_errors = 0
     for target in args.targets:
         if not os.path.exists(target):
             print("error: target not found: %s" % target, file=sys.stderr)
@@ -379,7 +383,9 @@ def main(argv=None):
                 with open(path, "r", encoding="utf-8", errors="replace") as fh:
                     text = fh.read()
             except OSError as e:
+                # A hard gate that cannot read its input must not report OK.
                 print("error: cannot read %s: %s" % (path, e), file=sys.stderr)
+                read_errors += 1
                 continue
             finds = lint_text(text)
             for lineno, prop, value in finds:
@@ -394,6 +400,10 @@ def main(argv=None):
               % (findings_total, files_flagged))
         print("Component-layer spacing values must reference var(--space-*) tokens.")
         return 1
+    if read_errors:
+        print("error: %d file(s) could not be read; gate result is unreliable."
+              % read_errors, file=sys.stderr)
+        return 2
     print("OK: no spacing-literal findings.")
     return 0
 

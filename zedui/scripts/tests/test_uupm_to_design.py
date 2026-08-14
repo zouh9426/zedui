@@ -441,6 +441,46 @@ class TestExtraColorTokens(unittest.TestCase):
             after_body = _fm_and_body(_read(md))[1]
             self.assertIn("| secondary_text | #475569 |", after_body)
 
+    def test_upstream_semantic_palette_fixture(self):
+        """Fixture mirroring public UUPM upstream main @a38d04c (2026-08-13):
+        16 semantic roles + legacy cta/text/on_cta + notes, with EMPTY
+        strings for palette slots the palette did not fill. All 11 required
+        roles are present, so strict mode must pass; valued extras must
+        survive everywhere; empty extras must be dropped (not fail, not TBD).
+        """
+        ds = _full_ds()
+        ds["colors"] = {
+            "primary": "#F59E0B", "on_primary": "#0F172A",
+            "secondary": "#FBBF24", "on_secondary": "#0F172A",
+            "accent": "#8B5CF6", "on_accent": "#FFFFFF",
+            "background": "#0F172A", "foreground": "#F8FAFC",
+            "card": "#1E293B", "card_foreground": "#F8FAFC",
+            "muted": "#272F42", "muted_foreground": "#94A3B8",
+            "border": "#334155", "destructive": "#EF4444",
+            "on_destructive": "",  # palette slot not filled -> dropped
+            "ring": "#F59E0B",
+            "cta": "#8B5CF6", "text": "#F8FAFC", "on_cta": "#FFFFFF",
+            "notes": "Gold trust + purple tech",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            md = _gen_md(tmp, ds=ds)
+            text = _read(md)
+            fm, body = _fm_and_body(text)
+            # valued semantic extras survive the bridge
+            self.assertIn('on_secondary: "#0F172A"', fm)
+            self.assertIn('card_foreground: "#F8FAFC"', fm)
+            self.assertIn("| muted_foreground | #94A3B8 |", body)
+            # empty extras are dropped, not flagged, not TBD
+            self.assertNotIn("on_destructive", fm)
+            self.assertNotIn("on_destructive", body)
+            css = os.path.join(tmp, "tokens.css")
+            rc, _so, se = run_script(["--from-design", md, "--tokens-css", css])
+            self.assertEqual(rc, 0, se)
+            css_text = _read(css)
+            self.assertIn("--on-secondary: #0F172A;", css_text)
+            self.assertIn("--card-foreground: #F8FAFC;", css_text)
+            self.assertNotIn("on-destructive", css_text)
+
 
 class TestCustomScales(unittest.TestCase):
     """--rounded/--type-scale custom ladders take effect; spacing stays driven
@@ -620,6 +660,22 @@ class TestValidationErrors(unittest.TestCase):
                 ["--from-design", md, "--tokens-css", os.path.join(tmp, "t.css")])
             self.assertEqual(rc, 1)
             self.assertIn("scale.base", se)
+
+    def test_from_design_five_step_scale_fails(self):
+        """base+2xl alone are not enough: a hand-shrunk 5-step ladder that
+        still contains both must be rejected (< 6 steps)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            md = _gen_md(tmp)
+            text = _read(md)
+            for gone in ('    xs: "12px"\n', '    sm: "14px"\n',
+                         '    xl: "24px"\n', '    3xl: "40px"\n'):
+                self.assertIn(gone, text)
+                text = text.replace(gone, "")
+            _write(md, text)
+            rc, _so, se = run_script(
+                ["--from-design", md, "--tokens-css", os.path.join(tmp, "t.css")])
+            self.assertEqual(rc, 1)
+            self.assertIn("at least 6", se)
 
     def test_invalid_css_key_from_design_fails(self):
         with tempfile.TemporaryDirectory() as tmp:

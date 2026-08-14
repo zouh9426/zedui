@@ -13,7 +13,7 @@ DESIGN.md 的文档契约：YAML frontmatter 是全部 token 值的唯一事实�
 | impeccable | 实测基线 `4.0.4` | 2026-08-14 | `context.mjs` 每 session 只跑一次的协议（`CONTEXT_STALE` / `MANUAL_DETECTOR_REQUIRED` 等指令必须响应；有明确页面/组件时传 `--target <path>`）；critique 的 A/B 隔离子代理协议（Assessment A 先于 detector 结果完成，B 自跑 detector 与浏览器证据）；detector 公开入口 `scripts/detect.mjs`（`scripts/detector/detect-antipatterns.mjs` 为兼容 fallback）；`design-system-font / color / radius / font-size` 四条规则**不含 spacing**（间距字面值由 zedui `token_lint.py` 兜底） |
 | design-taste-frontend | 无版本号字段 | 2026-08-14 | Honesty rule（官方设计系统例外条款）、生产环境字体用 `next/font` 等条款；默认 Tailwind v4（间距类 arbitrary 值 `p-[17px]` 由 `token_lint.py` 封） |
 | interface-design | 无版本号字段 | 2026-08-14 | `.interface-design/system.md` 读写闭环（zedui 禁止其创建，沉淀落点为 DESIGN.md 的 `## Components` 节） |
-| ui-ux-pro-max | 无版本号字段 | 2026-08-14（契约探测实测） | `search.py --design-system --json` 契约：外层 `{"design_system": {...}}`；colors 当前输出 12 个色值 + `notes`（含遗留键 `cta`/`text`；旧副本可能缺 `cta`，桥接脚本 fail-closed 会拦） |
+| ui-ux-pro-max | 无版本号字段 | 2026-08-14（本机副本契约探测） | `search.py --design-system --json` 契约：外层 `{"design_system": {...}}`。**本机实测副本**输出 12 个色值 + `notes`（含遗留键 `cta`/`text`）；**public upstream main**（a38d04c，2026-08-13）已输出 16 个 semantic roles（`on_secondary`/`on_accent`/`card`/`card_foreground`/`muted_foreground`/`on_destructive` 等）+ 遗留 `cta`/`text`/`on_cta`。桥接脚本对额外 semantic roles 透传、空值槽位丢弃，缺必需角色时 fail-closed 拦截——两个版本形态都兼容 |
 
 ## 已知上游动态
 
@@ -22,4 +22,5 @@ DESIGN.md 的文档契约：YAML frontmatter 是全部 token 值的唯一事实�
 ## 说明
 
 - 无版本号字段的上游以实测日期为基线；其协议/行为变更无法用版本号识别，接入或升级后请用 `doctor.py` 复核。
+- 本表"实测"均指**本机安装副本**；public upstream 仓库的最新动态（如 impeccable 4.1.1、UUPM semantic palette）单列说明，不与本地基线混为一谈。doctor.py 是离线体检，只对本地安装负责。
 - 本仓库不锁定上游版本；任何上游漂移都以 `doctor.py` 的实时体检结果为准。

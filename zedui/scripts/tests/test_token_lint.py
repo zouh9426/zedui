@@ -170,6 +170,27 @@ class TokenLintCliTests(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("error: target not found", r.stderr)
 
+    @unittest.skipIf(os.geteuid() == 0, "root can read anything")
+    def test_exit_2_unreadable_file(self):
+        """A hard gate that cannot read its input must not report OK."""
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "unreadable.css")
+            with open(path, "w") as fh:
+                fh.write(".a { padding: 17px; }\n")
+            os.chmod(path, 0)
+            try:
+                r = self._run(path)
+            finally:
+                os.chmod(path, 0o644)
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("could not be read", r.stderr)
+
+    def test_modern_viewport_units(self):
+        """dvh/dvw/svh/lvh/vmin/vmax literals are caught too."""
+        findings = tl.lint_text(
+            ".a { padding: 5dvh; margin-block: 2svw; gap: 1vmin; }\n")
+        self.assertEqual(len(findings), 3)
+
     def test_generated_file_skipped(self):
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, "tokens.css")

@@ -83,11 +83,17 @@ def _color_keys(colors):
     """Ordered color keys for output: fixed COLOR_ROLES, optional `text`
     (only when it differs from foreground), then any extra keys present in
     the UUPM JSON — user-confirmed additions such as secondary_text or
-    dark_* tokens must survive the bridge instead of being dropped."""
+    dark_* tokens, and upstream-version-dependent semantic roles
+    (on_secondary / card_foreground / ...), must survive the bridge instead
+    of being dropped. Extra keys with EMPTY values carry no fact (newer UUPM
+    emits '' for palette slots it did not fill) and are dropped; required
+    roles are always kept so strict validation can flag them."""
     keys = list(COLOR_ROLES)
     if colors.get("text") not in (None, "") and colors.get("text") != colors.get("foreground"):
         keys.append("text")
-    keys.extend(k for k in colors if k not in keys and k not in ("text", "notes"))
+    keys.extend(k for k in colors
+                if k not in keys and k not in ("text", "notes")
+                and colors.get(k) is not None and str(colors.get(k)).strip())
     return keys
 
 
@@ -179,7 +185,7 @@ def validate_token_contract(colors, heading_font, body_font, type_scale,
     """
     errors = []
 
-    def _map_errors(label, m):
+    def _map_errors(label, m, skip_empty_extras=False):
         if not isinstance(m, dict) or not m:
             errors.append("%s is missing or empty" % label)
             return
@@ -187,6 +193,12 @@ def validate_token_contract(colors, heading_font, body_font, type_scale,
             if k == "notes":
                 continue
             if not isinstance(v, str) or not v.strip():
+                # Newer UUPM versions emit '' for palette slots they did not
+                # fill; those extra keys carry no fact and are dropped from
+                # output, so they are not contract violations. (Required
+                # roles with empty values are flagged by the caller below.)
+                if skip_empty_extras:
+                    continue
                 errors.append("%s.%s is not a scalar string (unquoted value? quote "
                               "strings, e.g. \"%s: \\\"#0066FF\\\"\")" % (label, k, k))
                 continue
@@ -200,7 +212,7 @@ def validate_token_contract(colors, heading_font, body_font, type_scale,
                 except ValueError as e:
                     errors.append("%s.%s: %s" % (label, k, e))
 
-    _map_errors("colors", colors)
+    _map_errors("colors", colors, skip_empty_extras=True)
     if isinstance(colors, dict):
         for role in COLOR_ROLES:
             v = colors.get(role)
@@ -213,7 +225,12 @@ def validate_token_contract(colors, heading_font, body_font, type_scale,
     if body_font is None or not str(body_font).strip() or str(body_font).strip() == "TBD":
         errors.append("typography.body font is missing")
     _map_errors("typography.scale", type_scale)
-    if isinstance(type_scale, dict):
+    if isinstance(type_scale, dict) and type_scale:
+        # base+2xl presence alone is not enough: a hand edit could shrink the
+        # ladder to just those two. The documented ladder is >= 6 steps.
+        if len(type_scale) < 6:
+            errors.append("typography.scale has %d step(s); at least 6 are required "
+                          "(the documented xs..2xl ladder)" % len(type_scale))
         for tok in ("base", "2xl"):
             v = type_scale.get(tok)
             if not isinstance(v, str) or not v.strip() or v.strip() == "TBD":

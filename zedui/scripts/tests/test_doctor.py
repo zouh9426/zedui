@@ -242,6 +242,65 @@ class TestVersionDrift(unittest.TestCase):
             self.assertNotIn("matches the tested baseline", out)
 
 
+class TestUupmProbeContract(unittest.TestCase):
+    """The UUPM probe validates against the SAME contract the bridge
+    enforces: an installed UUPM whose palette lacks a required role (cta on
+    older copies) must fail the probe, not just the bridge."""
+
+    def _fake_search_py(self, td, colors):
+        import uupm_to_design as utd
+        payload = {"design_system": {
+            "project_name": "Probe", "colors": colors,
+            "typography": {"heading": "Inter", "body": "Inter"},
+            "spacing_scale": {"md": "16px"},
+            "dials": {"variance": 3, "motion": 4, "density": 5},
+        }}
+        script = os.path.join(td, "search.py")
+        with open(script, "w", encoding="utf-8") as fh:
+            fh.write("import json\nprint(json.dumps(%r))\n" % payload)
+        return script
+
+    def _full_colors(self):
+        import uupm_to_design as utd
+        return {role: "#112233" for role in utd.COLOR_ROLES}
+
+    def test_probe_passes_with_all_required_roles(self):
+        with tempfile.TemporaryDirectory() as td:
+            ok, res = doctor._probe_uupm_contract(
+                self._fake_search_py(td, self._full_colors()))
+            self.assertTrue(ok, res)
+
+    def test_probe_fails_when_cta_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            colors = self._full_colors()
+            del colors["cta"]
+            ok, res = doctor._probe_uupm_contract(
+                self._fake_search_py(td, colors))
+            self.assertFalse(ok)
+            self.assertIn("cta", res)
+
+    def test_probe_tolerates_empty_role_values(self):
+        """UUPM leaves palette slots '' on a knowledge-base miss — data, not
+        schema. Keys present with empty values must still pass the probe."""
+        with tempfile.TemporaryDirectory() as td:
+            colors = self._full_colors()
+            colors["muted"] = ""
+            colors["border"] = ""
+            ok, res = doctor._probe_uupm_contract(
+                self._fake_search_py(td, colors))
+            self.assertTrue(ok, res)
+            self.assertIn("empty", res)
+
+    def test_probe_fails_on_bad_json(self):
+        with tempfile.TemporaryDirectory() as td:
+            script = os.path.join(td, "search.py")
+            with open(script, "w", encoding="utf-8") as fh:
+                fh.write("print('not json')\n")
+            ok, res = doctor._probe_uupm_contract(script)
+            self.assertFalse(ok)
+            self.assertIn("JSON", res)
+
+
 class TestMissingSkillEnvironment(unittest.TestCase):
     """The doctor's main entry exits 1 when no skill at all resolves."""
 

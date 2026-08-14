@@ -18,7 +18,7 @@ description: 项目级 UI 规范编排工作流。项目开局时用 UI-UX-Pro-M
 
 **唯一规范文件：项目根的 `DESIGN.md`。** 它是所有 skill 的唯一事实源（SSOT）。任何全局视觉决策只许写进 DESIGN.md，不许存在第二份规范文件（特别禁止创建 `.interface-design/system.md`）。
 
-**token 的唯一定义点是 DESIGN.md frontmatter。** 它有两个派生层，都是生成物、永不允许手改：正文里 `<!-- zedui:generated:* -->` 标记内的 token 表格（由桥接脚本 `--from-design` 从 frontmatter 机械再生，改了会被下次同步覆盖），以及代码侧的 `tokens.css`（同一命令生成）。改值只能改 frontmatter 再重新同步——三层永远一致，这是 SSOT 成立的机制保证。
+**token 的唯一定义点是 DESIGN.md frontmatter。** 它有两个派生层，都是生成物、永不允许手改：正文里 `<!-- zedui:generated:* -->` 标记内的 token 表格（由桥接脚本 `--from-design` 从 frontmatter 机械再生，改了会被下次同步覆盖），以及代码侧的 `tokens.css`（同一命令生成）。改值只能改 frontmatter 再重新同步——**同步命令成功返回后三层一致**；写盘是每个文件各自原子替换（不是两文件事务），万一中途失败产生不一致，由 `doctor.py` 的项目侧检查检出并按提示重跑同步恢复。
 
 ```
 Phase 0 开局：提问 → UUPM 出方案 → 用户确认 → 桥接脚本生成 DESIGN.md
@@ -104,7 +104,7 @@ python3 "$UUPM_HOME/scripts/search.py" "<产品类型> <行业> <风格关键词
 
 - 查询词 = 用户提示词 + 0.1 的回答 + 参考图关键词的组合，要具体（"fintech dashboard dark mode" 好于 "dashboard"）。
 - dials 初值按主场景给（产品型项目 3/4/7 上下、营销型项目 7/6/4 上下），**最终值在 0.3 与用户敲定**。
-- 输出是 JSON（结构见桥接脚本头部注释），包含 pattern/style/colors（当前版输出 12 色，含 `cta`/`text` 遗留键；旧副本若缺 `cta` 需在 0.3 补齐）/typography/dials/spacing_scale/motion_snippet/anti_patterns。
+- 输出是 JSON（结构见桥接脚本头部注释），包含 pattern/style/colors/typography/dials/spacing_scale/motion_snippet/anti_patterns。**zedui 要求 11 个必需色角色**；不同版本的 UUPM 副本输出的色键集合不同（较旧副本可能缺 `cta`，较新副本会多输出 semantic roles 如 `on_secondary`/`card_foreground`/`muted_foreground` 等）——缺的必需角色在 0.3 当场补齐，额外的 semantic roles 由桥接脚本自动透传（空值槽位自动丢弃），都不用特殊处理。
 - UUPM 检索 0 命中时它会明说用的是默认值——把这种不确定性如实转告用户，不要掩饰。
 
 ### 0.3 用户确认（硬性卡点，每次必停）
@@ -112,7 +112,7 @@ python3 "$UUPM_HOME/scripts/search.py" "<产品类型> <行业> <风格关键词
 把方案摊开来给用户看，必须包含：
 
 - 风格名 + 关键词 + 明暗支持
-- 完整色板（11 个必需角色 + `text`/extras，带 hex；当前版 UUPM 直接输出 `cta`，旧副本缺时当场补齐）
+- 完整色板（11 个必需角色 + extras，带 hex；副本缺 `cta` 等必需角色时当场补齐）
 - 标题/正文字体
 - 建议的 marketing / product 两组 dial 档位——**按风格倾向给建议，不要无脑用固定值**：极简/Linear 风建议 marketing 6/4/3、product 3/3/7；张扬/编辑风可用 marketing 8/6/4 起步
 - 建议的圆角阶梯与字号阶梯（桥接脚本默认值，用户可改；字号阶梯至少 6 档，否则标题/正文字号无从派生）
@@ -120,7 +120,7 @@ python3 "$UUPM_HOME/scripts/search.py" "<产品类型> <行业> <风格关键词
 
 **四个确认项（UUPM 数据的已知短板，逐项和用户确认）：**
 
-1. **次级文字色**：UUPM 的 10 角色色板没有 body 次级文本灰，落地页/产品页都会需要。不够就当场补一个 `secondary_text` token。
+1. **次级文字色**：UUPM 色板没有 body 次级文本灰，落地页/产品页都会需要。不够就当场补一个 `secondary_text` token。
 2. **中性墨色**：UUPM 色板为营销页优化，foreground 常是品牌色（蓝色文字）。产品页正文用品牌色会很难看——确认正文是否改用中性色，标题才用 foreground。
 3. **暗色 token**：UUPM JSON 只产出一套色值，明暗支持只是标注。项目要双模的话，当场补 `dark_*` 系列 token，否则 Taste 的双模强制会无 token 可用。
 4. **CJK 字体栈（中文/双语项目必须确认）**：UUPM 的字体库全是 Latin 字体，**不含 CJK 字形**——中文内容会静默回退到系统默认宋体/黑体，字体决策等于半失效，且 detector 完全测不出这种回退（它只看 font-family 声明）。中文项目必须把 fontFamily 写成栈：`"EB Garamond, Noto Serif SC"`（Latin 字体在前管西文与数字，CJK 字体在后管中文），Google Fonts URL 同步加上 CJK family。**字体相关 JSON 字段要四个一起改**：`heading` / `body` 的 fontFamily、`google_fonts_url`、`css_import`——只改前三个会让 URL / 导入与实际字体栈对不上。**且 `google_fonts_url` 要逐 family 核对**：UUPM 输出的 URL 可能含 heading/body 之外的字体（实测出现过 Cinzel 不属于任一），detector 的 `design-system-font` 比对 URL 时必报 finding——多余字体从 JSON 里清掉，别留进 URL。
@@ -144,7 +144,7 @@ python3 "$ZEDUI_HOME/scripts/uupm_to_design.py" uupm_output.json \
   --marketing-dials V,M,D [--product-dials V,M,D]
 ```
 
-**落盘校验是 fail-closed 的**：11 个颜色角色、标题/正文字体、`base`+`2xl` 字号档、marketing + product 两组 dial，缺一即报错退出、不落盘——0.3 没确认完的方案到不了 DESIGN.md（当前版 UUPM 已输出 `cta`；若你的 UUPM 副本较旧缺 `cta`，必须在 0.3 补进 JSON）。确需先落地残缺草案时显式加 `--allow-incomplete`（会写 TBD 占位），但 Phase 0 正式落盘不该用它。
+**落盘校验是 fail-closed 的**：11 个颜色角色、标题/正文字体、≥6 档且含 `base`+`2xl` 的字号阶梯、marketing + product 两组 dial，缺一即报错退出、不落盘——0.3 没确认完的方案到不了 DESIGN.md（UUPM 副本缺 `cta` 等必需角色时，必须在 0.3 补进 JSON）。确需先落地残缺草案时显式加 `--allow-incomplete`（会写 TBD 占位），但 Phase 0 正式落盘不该用它。
 
 **`--tokens-css` 目标目录**：没有既定样式目录的项目——Next.js 落 `app/`、普通前端落 `css/` 或 `styles/`，完全无样式目录就先落项目根，样式体系成型后再迁。`tokens.css` 落盘后接入项目样式入口（如全局 CSS 里 `@import`/拷贝引入），项目若已有手写 `:root` token 块，用它替换并把旧变量名映射为别名指向新变量（防引用断裂）。DESIGN.md + tokens.css 生成后，Phase 0 完成。之后任何页面才可以动工。
 
