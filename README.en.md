@@ -12,10 +12,10 @@ Works with any AI coding tool that supports SKILL.md skills (Kimi Code / Claude 
 ## Workflow
 
 ```
-Phase 0 开局：编排层提问（≤5 问）→ UUPM 出方案 → 用户确认 → 桥接脚本生成 DESIGN.md
-Phase 1 生产：按页面类型路由 → Taste（营销面）/ interface-design（产品面），全部以 DESIGN.md 为规范
-Phase 2 审查：Impeccable detector 双层扫描（源码 + 浏览器引擎）→ critique/audit → 修复回流生产者 → 复评
-迭代期：任何 UI 变更都走 Phase 1 → Phase 2；规范演进只通过修改 DESIGN.md
+Phase 0 Kickoff: orchestration-layer questions (≤5) → UUPM proposes a direction → user confirms → bridge script generates DESIGN.md
+Phase 1 Production: routed by page type → Taste (marketing-facing) / interface-design (product-facing), all governed by DESIGN.md
+Phase 2 Review: context.mjs guidance (once per session) → critique (A/B isolated) → audit → zedui hard gate (mechanical detector diff + browser-engine scan) → fixes routed back to producers → re-review
+Iteration: every UI change goes through Phase 1 → Phase 2; spec evolution happens only by editing DESIGN.md
 ```
 
 | Role | Skill | Upstream |
@@ -28,8 +28,8 @@ Phase 2 审查：Impeccable detector 双层扫描（源码 + 浏览器引擎）�
 ## Core design decisions
 
 - **A single `DESIGN.md` as the single source of truth (SSOT)**: all global visual decisions (color / typography / spacing / radius / dial) may only live in the project-root `DESIGN.md` (YAML frontmatter + fixed sections); no second spec file is allowed. On conflict, `DESIGN.md > skill-internal default rules`.
-- **Format bridging**: the JSON produced by UUPM is mechanically converted into DESIGN.md by `scripts/uupm_to_design.py`, guaranteeing a 100% stable, parser-friendly format — never hand-written.
-- **The token layer is generated, never hand-edited**: the code-side `tokens.css` is mechanically derived by the bridge script from the DESIGN.md frontmatter — in JSON mode via `--tokens-css`, and on spec evolution via `--from-design`. It is a build artifact; hand-editing it is forbidden. Literal values may live only in the token definition layer; component and page code may only reference token variables.
+- **Format bridging**: the JSON produced by UUPM is mechanically converted into DESIGN.md by `scripts/uupm_to_design.py`; mechanical conversion plus script-side checks keep the format stable and parser-friendly — never hand-written. The write is fail-closed: missing color roles / fonts / dials, or a type scale with fewer than 6 steps, aborts with an error; only an explicit `--allow-incomplete` writes TBD placeholders for a partial draft.
+- **The token layer is generated, never hand-edited**: the frontmatter is the single source of truth; both the token table inside the `<!-- zedui:generated:* -->` markers in the DESIGN.md body and the code-side `tokens.css` are derived artifacts, mechanically produced by the bridge script — in JSON mode via `--tokens-css`, and on spec evolution via `--from-design`, which rewrites the body table and tokens.css together from the frontmatter. Hand-editing them is forbidden. Literal values may live only in the token definition layer; component and page code may only reference token variables.
 - **Human checkpoint at kickoff**: the proposal is laid out to the user for item-by-item confirmation (covering four known weak spots: secondary text color, neutral ink, dark tokens, and the CJK font stack) before it is written to disk; without confirmation, no DESIGN.md is produced.
 - **Review only, never fix**: the detector's four `design-system-*` rules mechanically diff the code against DESIGN.md; any drift is a finding. Fixes are routed back to the producer, then re-reviewed and archived.
 
@@ -58,11 +58,13 @@ The first use enters Phase 0: the AI asks you 3–5 questions, proposes a design
 
 ```
 zedui/
-├── SKILL.md                    ← 编排工作流本体（工具无关，运行时探测路径）
-└── scripts/uupm_to_design.py   ← bridge: UUPM JSON → DESIGN.md; DESIGN.md frontmatter → tokens.css (stdlib only; tokens.css is generated, never hand-edited)
-README.md / README.en.md        ← 中英双门面
-SETUP.md / SETUP.en.md          ← 安装引导提示词（贴给你的 AI 即可）
-CHANGELOG.md                    ← 更新与决策日志
+├── SKILL.md                    ← the orchestration workflow itself (tool-agnostic; probes paths at runtime)
+├── scripts/uupm_to_design.py   ← bridge: UUPM JSON → DESIGN.md; DESIGN.md frontmatter → body generated table + tokens.css (stdlib only; artifacts never hand-edited)
+├── scripts/token_lint.py       ← spacing literal lint (closes the gap where the upstream detector doesn't cover spacing)
+└── scripts/doctor.py           ← environment health check (full-pipeline self-check)
+README.md / README.en.md        ← bilingual front doors (CN / EN)
+SETUP.md / SETUP.en.md          ← setup guide prompt (paste it to your AI)
+CHANGELOG.md                    ← changelog and decision log
 ```
 
 ## License

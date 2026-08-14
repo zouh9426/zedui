@@ -1,6 +1,6 @@
 ---
 name: zedui
-description: 项目级 UI 规范编排工作流。项目开局时用 UI-UX-Pro-Max 定方向并生成唯一规范文件 DESIGN.md；随后按页面类型路由到 design-taste-frontend（营销/落地页）或 interface-design（产品页/后台/仪表盘）；每个页面完成后用 Impeccable 做审查（detector 硬校验 + critique 评审 + audit 审计），修复回流给生产者。Use when starting a new project's UI design, establishing or evolving DESIGN.md, building any UI page, or auditing UI consistency.
+description: 项目级 UI 规范编排工作流。项目开局时用 UI-UX-Pro-Max 定方向并生成唯一规范文件 DESIGN.md；随后按页面类型路由到 design-taste-frontend（营销/落地页）或 interface-design（产品页/后台/仪表盘）；每个页面完成后用 Impeccable 做审查（critique 设计评审 + audit 技术审计），再由 zedui 硬门禁做机械把关，修复回流给生产者。Use when starting a new project's UI design, establishing or evolving DESIGN.md, building any UI page, or auditing UI consistency.
 ---
 
 # zedui — UI 规范编排工作流
@@ -14,17 +14,17 @@ description: 项目级 UI 规范编排工作流。项目开局时用 UI-UX-Pro-M
 | 开局定方向 | `ui-ux-pro-max`（UUPM） | 从用户需求生成设计方向（风格/色板/字体/dial），数据驱动，不提问 |
 | 营销面生产 | `design-taste-frontend`（Taste） | 落地页、定价页、关于页、博客、作品集、改版 |
 | 产品面生产 | `interface-design` | Dashboard、后台、设置页、表单、数据界面、onboarding |
-| 审查（只审不修） | `impeccable` | detector 硬校验 + critique 设计评审 + audit 技术审计 |
+| 审查（只审不修） | `impeccable` | critique 设计评审 + audit 技术审计 + detector 证据 |
 
 **唯一规范文件：项目根的 `DESIGN.md`。** 它是所有 skill 的唯一事实源（SSOT）。任何全局视觉决策只许写进 DESIGN.md，不许存在第二份规范文件（特别禁止创建 `.interface-design/system.md`）。
 
-**token 定义层：`tokens.css` 由桥接脚本从 DESIGN.md frontmatter 机械生成（`--tokens-css` / `--from-design`），是生成物，永不允许手改。** 颜色、字体、字号、圆角、间距的唯一定义点是 DESIGN.md frontmatter；tokens.css 只是它在代码侧的投影。
+**token 的唯一定义点是 DESIGN.md frontmatter。** 它有两个派生层，都是生成物、永不允许手改：正文里 `<!-- zedui:generated:* -->` 标记内的 token 表格（由桥接脚本 `--from-design` 从 frontmatter 机械再生，改了会被下次同步覆盖），以及代码侧的 `tokens.css`（同一命令生成）。改值只能改 frontmatter 再重新同步——三层永远一致，这是 SSOT 成立的机制保证。
 
 ```
 Phase 0 开局：提问 → UUPM 出方案 → 用户确认 → 桥接脚本生成 DESIGN.md
 Phase 1 生产：按页面类型路由 → Taste / interface-design / UUPM 兜底，全部以 DESIGN.md 为规范
-Phase 2 审查：detector 双层扫描（源码级 + 浏览器引擎）→ critique/audit → 修复回流 → 复评
-迭代期：任何 UI 变更都走 Phase 1 → Phase 2；规范演进只通过修改 DESIGN.md
+Phase 2 审查：context 引导 → critique（A/B 隔离评审）→ audit → ZedUI 硬门禁 → 修复回流 → 复评
+迭代期：任何 UI 变更都走 Phase 1 → Phase 2；规范演进只通过修改 DESIGN.md frontmatter
 ```
 
 ---
@@ -35,13 +35,13 @@ Phase 2 审查：detector 双层扫描（源码级 + 浏览器引擎）→ criti
 
 **解析规则（按 skill 名匹配，不是按目录名）**：在候选技能目录下逐层找 `SKILL.md`，读 frontmatter 的 `name:` 字段与目标 skill 名比对（**不区分大小写**，兼容改名前安装的副本）——目录名和 skill 名可能不一致（例如目录 `taste-skill/` 里装的 skill 名是 `design-taste-frontend`），按目录名找会漏。**用 `find` 实现时加 `-L` 跟随符号链接**——skill 常以符号链接方式安装进技能目录，裸 `find` 不跟随符号链接会把它们整棵漏掉。
 
-候选技能目录（逐个检查存在的）：
+候选技能目录（**项目级优先、先命中先用**：同一 skill 装在多处时按此顺序找到第一个匹配即停，避免误用全局旧副本）：
 
+- 当前项目内的 `.agents/skills/`（项目级安装，最优先）
 - `~/.agents/skills/`（通用约定）
 - `~/.kimi-code/skills/`（Kimi Code）
 - `~/.claude/skills/`（Claude Code）
 - `~/.codex/skills/`（Codex）
-- 当前项目内的 `.agents/skills/`（项目级安装）
 - 当前工具文档/配置声明的其他技能目录
 
 需要解析的五个 HOME：
@@ -51,10 +51,10 @@ Phase 2 审查：detector 双层扫描（源码级 + 浏览器引擎）→ criti
 | `$UUPM_HOME` | `ui-ux-pro-max` | `scripts/search.py` 检索脚本、`data/` 知识库 |
 | `$TASTE_HOME` | `design-taste-frontend` | 营销面生产 |
 | `$ID_HOME` | `interface-design` | 产品面生产 |
-| `$IMP_HOME` | `impeccable` | detector / hook-admin / critique / audit |
-| `$ZEDUI_HOME` | `zedui`（本 skill 自身） | `scripts/uupm_to_design.py` 桥接脚本 |
+| `$IMP_HOME` | `impeccable` | context 引导 / detector / hook-admin / critique / audit |
+| `$ZEDUI_HOME` | `zedui`（本 skill 自身） | `scripts/uupm_to_design.py` 桥接脚本、`token_lint.py`、`doctor.py` |
 
-解析结果**显式告诉用户一行**（哪个 skill 在哪个路径）；任何一个解析不到，**停下来告知用户缺哪个、请参照项目 README/SETUP 安装**，不要静默跳过或瞎猜路径。
+解析结果**显式告诉用户一行**（哪个 skill 在哪个路径）。任何一个解析不到：**告知用户缺哪个、请参照项目 README/SETUP 安装**——缺的 skill 在当前任务链上（如要做产品页却缺 interface-design）就停下来等安装；当前任务用不到的（如纯营销项目缺 interface-design）记录后可继续，但路由到它之前必须装好。不要静默跳过或瞎猜路径。装好后用 `python3 "$ZEDUI_HOME/scripts/doctor.py"` 做一次全链路体检。
 
 ---
 
@@ -73,7 +73,7 @@ Phase 2 审查：detector 双层扫描（源码级 + 浏览器引擎）→ criti
 3. **四确认项照旧**：0.3 的次级文字色 / 中性墨色 / 暗色 token / CJK 字体栈逐项检查，缺则补——旧规范最常缺的正是这四项。**补建议 token 前先对照页面实现值**：detector 的 `design-system-color` 有颜色通道容差（±6）——建议值若与页面既有实现色接近，会把真实的未登记色"无意洗白"判为色板内、不再报漂移。拿不准的页面色保持漂移状态更安全。
 4. **用户确认（硬性卡点，同 0.3）**：翻译结果 + 建议项摊开确认；旧规范文档的处置（归档 / 保留为细则文档并在 DESIGN.md 建立引用）一并裁决——**禁止静默双规范并存**。
 5. **落盘**：用桥接脚本从翻译后的 JSON 生成 DESIGN.md + tokens.css（`--tokens-css`），格式由脚本保证可解析；覆盖既有 DESIGN.md 用 `--force`（指针内容已完成历史使命）。tokens.css 接入样式入口，旧 `:root` 手写 token 块替换为别名映射。**落盘前先对照旧值**：桥接脚本的圆角/字号用默认阶梯（rounded 默认 "0px,4px,8px,12px,16px,24px"、type-scale 默认 "12px,14px,16px,20px,24px,32px,40px,48px,64px"），**不含旧文档的圆角/字号值时旧值会被静默丢弃**——detector 随后把页面里的旧值报成漂移，迁移保真直接失败（2026-08-12 某模拟项目实测：旧值 6px 圆角不显式传参即被丢弃）。落盘前必须把旧文档的全部圆角/字号值对照默认阶梯，缺的用 `--rounded` / `--type-scale` 显式传入。**无样式入口形态**：旧项目可能纯内联样式、无全局 CSS、无 `:root` 块——"tokens.css 接入样式入口"无物可接。此时 tokens.css 落盘项目根或样式目录，并在 PROJECT_INDEX 登记"未接入，留待页面改版时启用"即可，不算漏步。
-6. **验证**：跑 2.1 detector 确认 frontmatter 可解析、`design-system-*` 四条规则能正常比对；对既有代码的漂移 finding 只报告，修复走 Phase 1/2 正常回流。
+6. **验证**：跑 2.3 的 detector 门禁确认 frontmatter 可解析、`design-system-*` 四条规则能正常比对；对既有代码的漂移 finding 只报告，修复走 Phase 1/2 正常回流。
 
 ### 0.1 提问（编排层做，UUPM 不会提问）
 
@@ -104,7 +104,7 @@ python3 "$UUPM_HOME/scripts/search.py" "<产品类型> <行业> <风格关键词
 
 - 查询词 = 用户提示词 + 0.1 的回答 + 参考图关键词的组合，要具体（"fintech dashboard dark mode" 好于 "dashboard"）。
 - dials 初值按主场景给（产品型项目 3/4/7 上下、营销型项目 7/6/4 上下），**最终值在 0.3 与用户敲定**。
-- 输出是 JSON（结构见桥接脚本头部注释），包含 pattern/style/colors(10 角色)/typography/dials/spacing_scale/motion_snippet/anti_patterns。
+- 输出是 JSON（结构见桥接脚本头部注释），包含 pattern/style/colors(10 角色，`cta` 需在 0.3 补齐为 11)/typography/dials/spacing_scale/motion_snippet/anti_patterns。
 - UUPM 检索 0 命中时它会明说用的是默认值——把这种不确定性如实转告用户，不要掩饰。
 
 ### 0.3 用户确认（硬性卡点，每次必停）
@@ -112,10 +112,10 @@ python3 "$UUPM_HOME/scripts/search.py" "<产品类型> <行业> <风格关键词
 把方案摊开来给用户看，必须包含：
 
 - 风格名 + 关键词 + 明暗支持
-- 完整色板（10 角色，带 hex）
+- 完整色板（UUPM 出 10 角色 + 确认时补齐的 `cta`，共 11 个，带 hex）
 - 标题/正文字体
 - 建议的 marketing / product 两组 dial 档位——**按风格倾向给建议，不要无脑用固定值**：极简/Linear 风建议 marketing 6/4/3、product 3/3/7；张扬/编辑风可用 marketing 8/6/4 起步
-- 建议的圆角阶梯与字号阶梯（桥接脚本默认值，用户可改）
+- 建议的圆角阶梯与字号阶梯（桥接脚本默认值，用户可改；字号阶梯至少 6 档，否则标题/正文字号无从派生）
 - 反模式清单（这个项目要避免什么）
 
 **四个确认项（UUPM 数据的已知短板，逐项和用户确认）：**
@@ -141,8 +141,10 @@ python3 "$ZEDUI_HOME/scripts/uupm_to_design.py" uupm_output.json \
   --tokens-css <项目样式目录>/tokens.css \
   [--rounded "0px,4px,8px,12px,16px,24px"] \
   [--type-scale "12px,14px,16px,20px,24px,32px,40px,48px,64px"] \
-  [--marketing-dials V,M,D] [--product-dials V,M,D]
+  --marketing-dials V,M,D [--product-dials V,M,D]
 ```
+
+**落盘校验是 fail-closed 的**：11 个颜色角色、标题/正文字体、≥6 档字号阶梯、marketing + product 两组 dial，缺一即报错退出、不落盘——0.3 没确认完的方案到不了 DESIGN.md（UUPM 只出 10 色，缺的 `cta` 必须已在 0.3 补进 JSON）。确需先落地残缺草案时显式加 `--allow-incomplete`（会写 TBD 占位），但 Phase 0 正式落盘不该用它。
 
 **`--tokens-css` 目标目录**：没有既定样式目录的项目——Next.js 落 `app/`、普通前端落 `css/` 或 `styles/`，完全无样式目录就先落项目根，样式体系成型后再迁。`tokens.css` 落盘后接入项目样式入口（如全局 CSS 里 `@import`/拷贝引入），项目若已有手写 `:root` token 块，用它替换并把旧变量名映射为别名指向新变量（防引用断裂）。DESIGN.md + tokens.css 生成后，Phase 0 完成。之后任何页面才可以动工。
 
@@ -171,10 +173,12 @@ Taste 会主动拒绝产品型页面、interface-design 会主动拒绝营销页
 4. **响应式是交付硬指标**：每个多列布局都必须带 `<768px` 的显式单列坍缩（你自己 §3.E/§7 的规则），交付清单里的 Mobile collapse 项不许放水。
 5. 颜色/字号/圆角/间距一律引用 tokens.css 变量，不写字面值（硬性规则 6）。
 6. 遵守你自己的 Pre-Flight 清单交付。
+7. **官方设计系统例外**：项目若走 Material / Fluent / Carbon 等官方体系，按你自己的 Honesty rule 装官方包、用官方 token——不要手工重建其 CSS，也不要把 DESIGN.md token 强刷到官方组件上。这种项目在 Phase 0 就应把"采用官方体系"写进 DESIGN.md，token 层只承载品牌色等增量。
+8. **字体加载按你的生产规则**：Next.js 用 `next/font`，其他生产环境 self-host + `font-display: swap`；DESIGN.md 里的 `css_import`（Google Fonts @import）只是开发期便利，不许带进生产。
 
 ### 调用 interface-design 时的约束指令（必须包含）
 
-1. **把项目根的 DESIGN.md 当作你的 system 文件**读取并遵守；**禁止创建 `.interface-design/system.md`**。
+1. **把项目根的 DESIGN.md 当作你的 system 文件**读取并遵守；**禁止创建 `.interface-design/system.md`**——任务结束时你那"是否保存 system 供后续会话复用"的环节，落点改为 DESIGN.md 的 `## Components` 节（见第 3 条），不开新文件。
 2. 全局 token（色/字/间距/圆角）以 DESIGN.md 为唯一来源；你内部的设计规则只补 DESIGN.md 没规定的执行细节。
 3. 构建中沉淀的新组件规范（测量值、用法），**追加到 DESIGN.md 的 `## Components` 章节**（格式：组件名 / 关键测量值 / 何时用），复用 ≥2 次才收录。全局 token 的变更不许写这里——全局变更走"规范演进"流程（见 Phase 3）。
 4. dial 三档用 DESIGN.md 里记录的 **product 组**。
@@ -188,30 +192,63 @@ Taste 会主动拒绝产品型页面、interface-design 会主动拒绝营销页
 DESIGN.md ＞ skill 内部默认规则
 ```
 
-skill 的内部规则全部是"DESIGN.md 没规定时的默认值"，不是与 DESIGN.md 平级的第二套规范。
+skill 的内部规则全部是"DESIGN.md 没规定时的默认值"，不是与 DESIGN.md 平级的第二套规范。唯一例外是官方设计系统（Material / Fluent / Carbon 等）：项目明确采用官方体系时，官方 token 与组件优先，DESIGN.md 只承载品牌增量——这个例外本身也必须记录在 DESIGN.md 里。
 
 ---
 
-## Phase 2：审查（Impeccable，只审不修）
+## Phase 2：审查（Impeccable 评审 + zedui 硬门禁，只审不修）
 
 触发：每个页面完成后；每次迭代完成后；用户要求"体检"时。
 
-### 2.1 源码级扫描（detector CLI）
+### 2.0 Impeccable 上下文引导（每 session 一次，最先做）
+
+```bash
+node "$IMP_HOME/scripts/context.mjs"
+```
+
+每个会话**只跑一次，不许重跑**（上游硬协议）。它加载项目的 PRODUCT.md / DESIGN.md 与 surface 上下文，并可能下发必须响应的指令：`CONTEXT_STALE`（上下文过期，按指引刷新）、`MANUAL_DETECTOR_REQUIRED`（无自动 hook 时改完 UI 要手动跑 detector）、`NO_PRODUCT_MD`、`MONOREPO_TARGET_REQUIRED` 等。**收到指令就遵循，不要当普通输出略过。**之后所有 Impeccable 命令（critique / audit）都建立在这个上下文之上。
+
+### 2.1 critique 设计评审（先评，不许先喂 detector 结果）
+
+按 Impeccable 自己的 critique 协议执行，两条铁律：
+
+- **Assessment A（主观设计判断）必须先于任何 detector 结果完成**——detector 输出是确定性的，但它会锚定设计判断（上游明文规定）。因此编排层**不得在 critique 之前把 detector 扫描结果灌进上下文**；顺序永远是 critique 在前、硬门禁复核在后。
+- **A 与 B 必须是两个互不可见的隔离子代理**（环境支持 sub-agent 时这是 mandatory，不是建议）；detector 与浏览器证据由 **Assessment B 自己运行**，父上下文不重跑。降级为单上下文必须按上游要求挂 `⚠️ DEGRADED` 横幅自曝。
+
+产物：Nielsen 启发式 40 分制 + P0-P3 问题清单，快照存 `.impeccable/critique/`（critique 自带 trend，复评时对比）。
+
+### 2.2 audit 技术审计
+
+无障碍/性能/主题/响应式/实现完整性 5 维 /20 分。第 5 维（Implementation Integrity）上游会自行调用 detector 并逐条在上下文中复核，编排层不代跑。
+
+按 Impeccable 自己 SKILL.md 的命令协议调用；**只用它的审查类命令，不用 build/fix 类命令**（polish/shape/animate 等一律不用）。
+
+### 2.3 ZedUI 硬门禁（机械把关，全部通过才算审查通过）
+
+critique/audit 是判断层；以下机械检查由编排层直接把关。
+
+**a) design-system 漂移清零**：复用 critique Assessment B 已跑出的 detector 结果（没有则按下文命令自跑）——`design-system-font / design-system-color / design-system-radius / design-system-font-size` 四条规则机械比对代码与 DESIGN.md frontmatter 声明的字体/色板/圆角/字号阶梯。**这四类 finding 必须清零，不接受豁免**（那是真漂移，豁免处置见 2.4）。
+
+detector CLI 实操要点：
 
 ```bash
 node "$IMP_HOME/scripts/detector/detect-antipatterns.mjs" --json <目标文件或目录>
 ```
 
-- `design-system-font / design-system-color / design-system-radius / design-system-font-size` 四条规则会机械比对代码与 DESIGN.md frontmatter 声明的字体/色板/圆角/字号阶梯——**漂移即 finding**，这是整个工作流的硬保障。
-- 同时会报约 60 条 slop/quality 规则（AI 味、排版等）。
-- exit code 2 = 有发现。
+- 同时会报约 60 条 slop/quality 规则（AI 味、排版等）；exit code 2 = 有发现。
 - 不同版本的 Impeccable 目录布局可能不同——`scripts/detector/detect-antipatterns.mjs` 不存在时，在 `$IMP_HOME` 内搜索 `detect-antipatterns.mjs` 的实际位置再用（`hook-admin.mjs` 同理）。
 
-**检测边界（实测确认）**：`design-system-color` 只检查**属性声明处的字面值**（`color: #00C853` 会被抓）；CSS 自定义属性的定义行（`--accent: #xxx`）和 `var()` 引用**不检查**。硬校验抓的是"绕过 token 手写字面值"这类最常见的漂移；token 定义层的正确性靠 0.3 确认和人工把关，不要误以为 detector 全能。更具体地说，`design-system-color` 实测**只抓部分属性位置的字面值**——`box-shadow` 值内、部分上下文会漏。**detector 清零后应人工补网**：`grep -nE "#[0-9a-fA-F]{3,8}|rgba?\("` 扫一遍源码，确认没有漏网的色值字面量再交付。另外 `design-system-color` 有颜色通道容差（±6）——与色板近似的未登记色会被判为色板内静默通过，临界色值需人工复核。
+**检测边界（实测确认）**：`design-system-color` 只检查**属性声明处的字面值**（`color: #00C853` 会被抓）；CSS 自定义属性的定义行（`--accent: #xxx`）和 `var()` 引用**不检查**。而且实测**只抓部分属性位置的字面值**——`box-shadow` 值内、部分上下文会漏。另外它有颜色通道容差（±6）——与色板近似的未登记色会被判为色板内静默通过，临界色值需人工复核。**detector 清零后应人工补网**：`grep -nE "#[0-9a-fA-F]{3,8}|rgba?\("` 扫一遍源码，确认没有漏网的色值字面量再交付。
 
-### 2.2 浏览器引擎扫描（有浏览器时必须跑）
+**b) 间距字面值 lint（zedui 自补的兜底）**：上游 detector 的 design-system 比对**不覆盖 spacing**——`padding: 17px` 这类字面值不会成为 finding，"间距字面值必然被抓"是不成立的。用 zedui 自带的 token lint 兜底：
 
-源码级 CLI 只看文本，**看不见计算样式**——间距挤压、实际对比度、触摸目标、CJK 字体回退全部漏检（试点项目漏过一个 padding 被层叠覆盖的 bug，用户肉眼抓到）。同一 CLI 传 URL 即自动启用浏览器引擎（注意 `engines/browser/detect-url.mjs` 是库不是入口，直接跑它什么都不扫）：
+```bash
+python3 "$ZEDUI_HOME/scripts/token_lint.py" <目标文件或目录>
+```
+
+规则：组件层样式里的 padding/margin/gap 等字面值必须引用 `var(--space-*)`；token 定义层（tokens.css 等生成物）豁免。
+
+**c) 浏览器引擎扫描 + 多端视口（有浏览器时必须跑）**：源码级 CLI 只看文本，**看不见计算样式**——间距挤压、实际对比度、触摸目标、CJK 字体回退全部漏检（试点项目漏过一个 padding 被层叠覆盖的 bug，用户肉眼抓到）。同一 CLI 传 URL 即自动启用浏览器引擎（注意 `engines/browser/detect-url.mjs` 是库不是入口，直接跑它什么都不扫）：
 
 ```bash
 # 首次准备：cd "$IMP_HOME" && PUPPETEER_SKIP_DOWNLOAD=1 npm i puppeteer
@@ -220,9 +257,7 @@ export PUPPETEER_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS
 node "$IMP_HOME/scripts/detector/detect-antipatterns.mjs" "file://<页面绝对路径>.html"
 ```
 
-并配合截图人工审查**关键接缝处的局部裁切**（不要只看缩略全图——局部间距问题在缩略图里不可见，实测教训）。
-
-**2.2.1 多端视口检查（手机 / 平板 / 桌面）**：detector 没有专门的响应式规则（实测：`--viewport` 参数有效，但固定宽度+无媒体查询的页面在手机视口下也能过扫描——它查不出布局坍缩问题）。所以多端适配检查 = **三档视口各跑一次浏览器引擎 + 每档截图人工审查**：
+**多端视口检查（手机 / 平板 / 桌面）**：detector 没有专门的响应式规则（实测：`--viewport` 参数有效，但固定宽度+无媒体查询的页面在手机视口下也能过扫描——它查不出布局坍缩问题）。所以多端适配检查 = **三档视口各跑一次浏览器引擎 + 每档截图人工审查**：
 
 ```bash
 for vp in 390x844 768x1024 1440x900; do
@@ -230,19 +265,19 @@ for vp in 390x844 768x1024 1440x900; do
 done
 ```
 
-截图人工审查的判断标准：布局是否按媒体查询坍缩为单列、有无横向滚动、文字是否溢出、触控目标是否 ≥44px。布局级的响应式打分由 2.4 的 `audit`（Responsive 维度：固定宽度/横向滚动/断点缺失/触达尺寸，0-4 分）负责。
+截图人工审查的判断标准：布局是否按媒体查询坍缩为单列、有无横向滚动、文字是否溢出、触控目标是否 ≥44px。布局级的响应式打分由 2.2 的 `audit`（Responsive 维度：固定宽度/横向滚动/断点缺失/触达尺寸，0-4 分）负责。
 
-**截图方式实测教训**：不要用 Chrome CLI 的 `--screenshot --window-size=390` 截移动端图——CLI 截图有最小窗宽（约 500px）伪影，390 的移动视口是假的。移动端截图必须用 puppeteer `setViewport` / CDP 设备模拟等真实模拟方式（2026-08-12 某生产项目实测：CLI 截图显示整页溢出 P0，真实模拟下无溢出——以真实模拟结果为准）。
+**d) 截图人工核查**：配合截图人工审查**关键接缝处的局部裁切**（不要只看缩略全图——局部间距问题在缩略图里不可见，实测教训）。**截图方式实测教训**：不要用 Chrome CLI 的 `--screenshot --window-size=390` 截移动端图——CLI 截图有最小窗宽（约 500px）伪影，390 的移动视口是假的。移动端截图必须用 puppeteer `setViewport` / CDP 设备模拟等真实模拟方式（2026-08-12 某生产项目实测：CLI 截图显示整页溢出 P0，真实模拟下无溢出——以真实模拟结果为准）。
 
-### 2.3 豁免（误报处置）
+### 2.4 豁免（误报处置）
 
-detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准的 token 可能命中通用规则（实测：`overused-font` 命中批准字体、`side-tab` 命中签名组件、`cream-palette` 命中批准底色）。处理原则：**被 DESIGN.md 批准的，是"决策，不是缺陷"**；命中 `design-system-*` 四条规则的**没有豁免**——那才叫漂移。
+detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准的 token 可能命中通用规则（实测：`overused-font` 命中批准字体、`side-tab` 命中签名组件、`cream-palette` 命中批准底色）。处理原则：**被 DESIGN.md 批准的，是"决策，不是缺陷"**；命中 `design-system-*` 四条规则的**一律不豁免**——那才叫漂移，只能改代码或走 Phase 3 改规范。
 
 **豁免前置条件**：豁免前先确认该决策已记录在 DESIGN.md（全局 token 在 frontmatter，组件级决策在 `## Components`）；没记录就先回流备案再豁免，reason 里注明"见 DESIGN.md"。没有备案的豁免等于放水。
 
 **豁免方式按规则类型分**：
 
-- **有值规则**（`overused-font`、`design-system-*` 等）：`hook-admin.mjs ignore-value <rule> "<值>" --reason "..."`。
+- **有值规则**（`overused-font` 等通用规则）：`hook-admin.mjs ignore-value <rule> "<值>" --reason "..."`。
 - **无值规则**（`cream-palette`、`gray-on-color`、`cramped-padding`、`side-tab` 等）：`ignore-value` 按值写永远匹配不上（实测）。全项目故意决策用 `hook-admin.mjs ignore-rule <id> --reason "..."`；单文件用 `ignore-value <id> "*" --file <路径>`。
 
 **豁免写在哪**：`.impeccable/config.json` 放在**运行 detector / 安装 hook 的那个项目根**——hook 从会话工作目录读配置，不是从被审文件所在目录读（实测踩坑：豁免写进子项目目录，hook 在父目录触发时看不到）。**file 作用域的路径写"相对 hook 工作目录"的形式**；hook 消息里展示的长路径是显示形式不是匹配形式，不确定时两种形式都写进 `files` 数组。
@@ -252,17 +287,11 @@ detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准�
 - **URL 模式扫描豁免不到**：`ignoreValues` 的 `files` 匹配只对文件/源码模式生效，**对 URL 模式（浏览器引擎扫描）不生效**——豁免不了 URL 扫描的 finding。URL 扫描结果以人工研判 / 备案为准（备案前置条件见上）。
 - **豁免配置要随仓库走**：若项目把 `.impeccable/` 整体 gitignore，豁免配置就不随仓库走，团队成员各跑各的、finding 口径不一。需要团队共享豁免时，**别把 `config.json` 忽略掉**（只忽略其余产物即可，如 `.impeccable/critique/`）。
 
-### 2.4 设计评审与技术审计
-
-- **critique**：Nielsen 启发式 40 分制 + P0-P3 问题清单，快照存 `.impeccable/critique/`。
-- **audit**：无障碍/性能/主题/响应式/实现完整性 5 维 /20 分。
-- 按 Impeccable 自己 SKILL.md 的命令协议调用；**只用它的审查类命令，不用 build/fix 类命令**（polish/shape/animate 等一律不用）。
-
 ### 2.5 修复回流（谁建的谁修）
 
 - 营销页的问题 → 回流给 **Taste** 修；产品页的问题 → 回流给 **interface-design** 修。
 - 修复时把 finding 原文 + DESIGN.md 一起交给生产者。
-- 修完**必须复评**：重跑 2.1 + 2.2 扫描和 critique，分数留档（critique 自带 trend）。
+- 修完**必须复评**：重跑 critique + 2.3 硬门禁，分数留档（critique 自带 trend）。
 - P0/P1 未清零不算完成。
 
 ---
@@ -270,8 +299,9 @@ detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准�
 ## Phase 3：迭代与规范演进
 
 - **每次 UI 变更都经过本工作流**：读 DESIGN.md → Phase 1 路由 → 构建 → Phase 2 审查。不绕过。
-- **规范演进唯一入口是改 DESIGN.md**：用户确认的设计变更（换色、加字体、调圆角）→ 直接编辑 DESIGN.md frontmatter 对应字段 → 重跑 `uupm_to_design.py --from-design DESIGN.md --tokens-css <token文件>` 重新生成 token 定义层 → 重跑 detector 确认现有代码与新规范的兼容情况，漂移处回流生产者修。
-- interface-design 沉淀的组件规范只追加进 `## Components` 节；全局 token 的变更只能由用户拍板后改 frontmatter。
+- **规范演进唯一入口是改 DESIGN.md frontmatter**：用户确认的设计变更（换色、加字体、调圆角）→ 直接编辑 DESIGN.md frontmatter 对应字段 → 重跑 `uupm_to_design.py --from-design DESIGN.md --tokens-css <token文件>`——它会从 frontmatter **同时再生正文里 `<!-- zedui:generated:* -->` 标记内的 token 表格和 tokens.css**，三层同步，不存在"frontmatter 改了正文还是旧值"的窗口 → 重跑 detector 确认现有代码与新规范的兼容情况，漂移处回流生产者修。
+- 正文标记区以外的内容（风格意图、策略说明、`## Components`）是人工维护区，脚本永不触碰；interface-design 沉淀的组件规范只追加进 `## Components` 节；全局 token 的变更只能由用户拍板后改 frontmatter。
+- 旧版脚本（v0.4 之前）生成的 DESIGN.md 没有 generated 标记，`--from-design` 会拒绝并提示——用原始 JSON 加 `--force` 重新生成一次即可迁入新格式。
 
 ---
 
@@ -281,8 +311,8 @@ detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准�
 2. **永远只有一份规范文件**。禁止创建 `.interface-design/system.md`、MASTER.md 或任何平行规范（UUPM 的 `--persist` 不要用）。
 3. Impeccable **只审不修**；修复永远回流给生产者。
 4. 审查不通过（detector 有 design-system-* finding 或 critique 有 P0）**不交付**。
-5. DESIGN.md 的 frontmatter 格式不许手写改动结构（嵌套 map、无列表、字符串加引号）——detector 的解析器只吃这个子集。加颜色加字号随便加，结构别动。
-6. **token 唯一定义层铁律**：颜色/字体/字号/圆角/间距的字面值只许出现在 token 定义层（DESIGN.md frontmatter → 生成的 tokens.css）；组件与页面代码只许引用 token 变量（`var(--accent)` 等），不许写字面值。tokens.css 是生成物，永不允许手改——改值只能改 DESIGN.md frontmatter 再重新生成。detector 的 design-system-* 规则就是这条铁律的机械兜底：组件层出现字面值必然成为 finding。
+5. DESIGN.md 两处结构不许手写改动：frontmatter 的 YAML 子集结构（嵌套 map、无列表、字符串加引号——detector 与桥接脚本的解析器只吃这个子集），以及正文 `<!-- zedui:generated:* -->` 标记内的 token 表格（frontmatter 的派生视图，改了会被下次 `--from-design` 覆盖）。加颜色加字号随便加，结构与标记别动。
+6. **token 唯一定义层铁律**：颜色/字体/字号/圆角/间距的字面值只许出现在 token 定义层（DESIGN.md frontmatter → 生成的 tokens.css）；组件与页面代码只许引用 token 变量（`var(--accent)` 等），不许写字面值。机械兜底分两层：detector 的 `design-system-*` 四条规则覆盖字体/色板/圆角/字号（实测边界：box-shadow 值内等位置会漏、±6 容差会放行近似色，见 2.3a）；间距字面值由 `token_lint.py` 覆盖（见 2.3b）。两层都有盲区，交付前按 2.3 的人工补网收口——不要把任何一层当成全覆盖保证。
 
 ## 资源速查（路径 = 环境探测节解析出的 HOME 变量）
 
@@ -290,7 +320,10 @@ detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准�
 |---|---|
 | UUPM 检索脚本 | `$UUPM_HOME/scripts/search.py` |
 | UUPM 知识库数据 | `$UUPM_HOME/data/` |
-| 桥接脚本（UUPM JSON → DESIGN.md；DESIGN.md → tokens.css） | `$ZEDUI_HOME/scripts/uupm_to_design.py` |
+| 桥接脚本（UUPM JSON → DESIGN.md；DESIGN.md → 正文同步 + tokens.css） | `$ZEDUI_HOME/scripts/uupm_to_design.py` |
+| 间距/token 字面值 lint | `$ZEDUI_HOME/scripts/token_lint.py` |
+| 环境全链路体检 | `$ZEDUI_HOME/scripts/doctor.py` |
+| Impeccable 上下文引导（每 session 一次） | `$IMP_HOME/scripts/context.mjs` |
 | Impeccable detector CLI（源码级 + 浏览器引擎共用） | `$IMP_HOME/scripts/detector/detect-antipatterns.mjs` |
 | Impeccable 豁免管理 | `$IMP_HOME/scripts/hook-admin.mjs` |
 | Taste skill 完整能力 | `$TASTE_HOME/SKILL.md` |

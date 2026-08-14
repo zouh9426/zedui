@@ -5,13 +5,13 @@ The input is the JSON emitted by uipro's ``search.py --design-system --json``
 (the outer wrapper is fixed to ``{"design_system": {...}}``). The conversion is
 mechanical: JSON in, fixed-format markdown out.
 
-Pure standard library (stdlib only).
+Pure standard library (stdlib only). Python 3.8+.
 
 Usage:
     uupm_to_design.py INPUT [-o OUTPUT] [--rounded "0px,4px,8px,12px,16px,24px"]
                             [--type-scale "12px,14px,16px,20px,24px,32px,40px,48px,64px"]
                             [--marketing-dials V,M,D] [--product-dials V,M,D]
-                            [--tokens-css TOKENS_CSS] [--force]
+                            [--tokens-css TOKENS_CSS] [--force] [--allow-incomplete]
 
     uupm_to_design.py --from-design DESIGN.md --tokens-css TOKENS_CSS
 
@@ -21,16 +21,29 @@ Usage:
     --tokens-css   also emit a generated CSS-custom-properties token file
                    (colors/typography/type scale/rounded/spacing). This file is
                    a build artifact: always overwritten, never hand-edited.
-    --from-design  read the frontmatter of an existing DESIGN.md (the SSOT)
-                   instead of a UUPM JSON; requires --tokens-css and emits only
-                   the token file. This is the Phase 3 path: edit the DESIGN.md
-                   frontmatter, regenerate tokens.css from it.
+    --from-design  read the frontmatter of an existing DESIGN.md (the SSOT),
+                   regenerate the marked token blocks in its body AND the token
+                   CSS file from it. This is the Phase 3 path: edit the DESIGN.md
+                   frontmatter, then re-sync body + tokens.css so the document
+                   can never disagree with itself.
+    --allow-incomplete   accept missing fields/dials and write "TBD"
+                   placeholders. Without it the script fails closed on
+                   incomplete input (missing colors/fonts/dials/short scales).
+
+DESIGN.md format (zedui-design-schema-v1): the YAML frontmatter is the single
+source of truth for every token value. Token tables in the markdown body live
+inside ``<!-- zedui:generated:<name>:start/end -->`` markers and are derived
+views — ``--from-design`` rebuilds them from the frontmatter. Everything
+outside the markers (style intent, strategy notes, ## Components) is
+human/agent-maintained and is never touched by this script.
 """
 
 import argparse
 import json
 import os
+import re
 import sys
+import tempfile
 
 DEFAULT_ROUNDED = "0px,4px,8px,12px,16px,24px"
 DEFAULT_TYPE_SCALE = "12px,14px,16px,20px,24px,32px,40px,48px,64px"
@@ -56,6 +69,9 @@ COMPONENTS_PLACEHOLDER = (
 )
 
 LABEL_KEYS = ("variance_label", "motion_label", "density_label")
+
+# Body blocks regenerated from the frontmatter in --from-design mode.
+GENERATED_BLOCKS = ("colors", "typography", "spacing", "rounded")
 
 
 def _color_keys(colors):
@@ -139,6 +155,95 @@ def build_spacing_scale(scale):
 
 
 # --------------------------------------------------------------------------
+# validation
+# --------------------------------------------------------------------------
+
+def _dials_complete(d):
+    return d is not None and len(d) == 3 and all(v is not None for v in d)
+
+
+def validate_design_system(ds, mkt, prod, type_scale):
+    """Fail-closed validation for the Phase 0 landing path.
+
+    Returns a list of human-readable problems; empty means the DESIGN.md is
+    safe to write. The point: a syntactically valid DESIGN.md full of "TBD"
+    is worse than no file, because the workflow treats "DESIGN.md exists" as
+    "the spec was confirmed".
+    """
+    errors = []
+    proj = ds.get("project_name")
+    if proj is None or not str(proj).strip():
+        errors.append("project_name is missing")
+    colors = ds.get("colors")
+    if not isinstance(colors, dict) or not colors:
+        errors.append("colors map is missing")
+    else:
+        for role in COLOR_ROLES:
+            v = colors.get(role)
+            if v is None or not str(v).strip():
+                errors.append(
+                    "colors.%s is missing (UUPM emits 10 roles; confirm and add "
+                    "'%s' during Phase 0.3 before landing)" % (role, role))
+    typo = ds.get("typography")
+    if not isinstance(typo, dict):
+        errors.append("typography is missing")
+    else:
+        if not str(typo.get("heading") or "").strip():
+            errors.append("typography.heading font is missing")
+        if not str(typo.get("body") or "").strip():
+            errors.append("typography.body font is missing")
+    if "base" not in type_scale or "2xl" not in type_scale:
+        errors.append(
+            "type scale needs at least 6 steps (xs..2xl) so body/heading sizes "
+            "can be derived; got %d step(s)" % len(type_scale))
+    if not _dials_complete(mkt):
+        errors.append("marketing dials missing: pass --marketing-dials V,M,D "
+                      "(values confirmed in Phase 0.3)")
+    if not _dials_complete(prod):
+        errors.append("product dials missing: pass --product-dials V,M,D "
+                      "or provide JSON dials (variance/motion/density)")
+    return errors
+
+
+def validate_frontmatter_tokens(fm):
+    """Validate the parsed DESIGN.md frontmatter for --from-design mode.
+
+    Besides presence, every token value must be a scalar: a nested map where a
+    value belongs means a hand edit broke the subset (classic case: an
+    unquoted hex like ``cta: #0066FF`` — the ``#`` starts a YAML comment, the
+    value vanishes, and the line parses as an empty map).
+    """
+    errors = []
+    for key in ("colors", "rounded", "spacing"):
+        m = fm.get(key)
+        if not isinstance(m, dict) or not m:
+            errors.append("frontmatter.%s is missing or empty" % key)
+            continue
+        for k, v in m.items():
+            if not isinstance(v, str):
+                errors.append("frontmatter.%s.%s is not a scalar (unquoted value? "
+                              "strings must be quoted, e.g. \"%s: \\\"#0066FF\\\"\")"
+                              % (key, k, k))
+    typo = fm.get("typography")
+    if not isinstance(typo, dict):
+        errors.append("frontmatter.typography is missing")
+    else:
+        for role in ("heading", "body"):
+            r = typo.get(role)
+            if not isinstance(r, dict) or not str(r.get("fontFamily") or "").strip():
+                errors.append("frontmatter.typography.%s.fontFamily is missing" % role)
+        scale = typo.get("scale")
+        if not isinstance(scale, dict) or not scale:
+            errors.append("frontmatter.typography.scale is missing or empty")
+        else:
+            for k, v in scale.items():
+                if not isinstance(v, str):
+                    errors.append("frontmatter.typography.scale.%s is not a scalar "
+                                  "(unquoted value?)" % k)
+    return errors
+
+
+# --------------------------------------------------------------------------
 # frontmatter
 # --------------------------------------------------------------------------
 
@@ -171,6 +276,10 @@ def build_frontmatter(ds, rounded_scale, type_scale, spacing_scale):
     lines.append("  body:")
     lines.append("    fontFamily: %s" % _q(typo.get("body")))
     lines.append("    fontSize: %s" % _q(type_scale.get("base")))
+    # Font-loading hints are token-adjacent: if the heading/body fonts change
+    # in the frontmatter, these go stale unless they live in the SSOT too.
+    lines.append("  google_fonts_url: %s" % _q(typo.get("google_fonts_url")))
+    lines.append("  css_import: %s" % _q(typo.get("css_import")))
     lines.append("  scale:")
     for tname, tval in type_scale.items():
         lines.append("    %s: %s" % (tname, _q(tval)))
@@ -205,6 +314,86 @@ def _cell(v):
     return str(v).replace("|", "\\|")
 
 
+def _marker(name, kind):
+    """Generated-block boundary marker, e.g. <!-- zedui:generated:colors:start -->."""
+    return "<!-- zedui:generated:%s:%s -->" % (name, kind)
+
+
+def _marked(name, content_lines):
+    return [_marker(name, "start")] + content_lines + [_marker(name, "end")]
+
+
+# --- generated token blocks (derived views of the frontmatter) -------------
+
+def render_colors_block(colors):
+    lines = ["| Token | Value |", "|---|---|"]
+    for k in _color_keys(colors):
+        lines.append("| %s | %s |" % (k, _cell(_s(colors.get(k)))))
+    return lines
+
+
+def render_typography_block(heading_font, body_font, gf_url, css_import, type_scale):
+    lines = [
+        "**Heading font**: %s" % _s(heading_font),
+        "**Body font**: %s" % _s(body_font),
+        "**Google Fonts URL**: %s" % _s(gf_url),
+        "",
+        "```css",
+        "%s" % _s(css_import),
+        "```",
+        "",
+        "| Step | Size |",
+        "|---|---|",
+    ]
+    for tname, tval in type_scale.items():
+        lines.append("| %s | %s |" % (tname, _cell(tval)))
+    return lines
+
+
+def render_spacing_block(spacing_scale):
+    lines = ["**Spacing scale**:", "", "| Token | Value |", "|---|---|"]
+    for sname, sval in spacing_scale.items():
+        lines.append("| %s | %s |" % (sname, _cell(sval)))
+    return lines
+
+
+def render_rounded_block(rounded_scale):
+    lines = ["| Token | Radius |", "|---|---|"]
+    for rname, rval in rounded_scale.items():
+        lines.append("| %s | %s |" % (rname, _cell(rval)))
+    return lines
+
+
+def splice_generated_blocks(text, blocks):
+    """Replace the content of each marked generated block in the DESIGN.md body.
+
+    Only the text between the start/end markers is touched; everything else —
+    including ## Components and all strategy prose — is preserved byte-for-byte.
+    Raises ValueError when a marker pair is missing (pre-0.4 format).
+    """
+    lines = text.splitlines()
+    for name in GENERATED_BLOCKS:
+        if name not in blocks:
+            continue
+        start_m = _marker(name, "start")
+        end_m = _marker(name, "end")
+        try:
+            si = lines.index(start_m)
+            ei = lines.index(end_m)
+        except ValueError:
+            raise ValueError(
+                "generated block markers for '%s' not found in the DESIGN.md body. "
+                "This file predates the zedui-design-schema-v1 marker format: "
+                "regenerate it from the UUPM JSON with --force (then edit the "
+                "frontmatter only), or add the marker pairs manually." % name)
+        if ei <= si:
+            raise ValueError("generated block '%s' end marker precedes start marker" % name)
+        lines[si + 1:ei] = blocks[name]
+    return "\n".join(lines) + "\n"
+
+
+# --- dials ------------------------------------------------------------------
+
 def parse_dials(s):
     """Parse 'V,M,D' into three integers in the range 1..10."""
     parts = [p.strip() for p in s.split(",")]
@@ -231,7 +420,8 @@ def resolve_dials(dials, mkt_flag, prod_flag):
     """Return (marketing dials, product dials, product labels).
 
     marketing dials come only from the CLI flag; product dials come from the
-    CLI flag, or from JSON `dials` when the flag is absent.
+    CLI flag, or from JSON `dials` when the flag is absent. JSON-fallback
+    values get the same 1..10 range check as the CLI path (raises ValueError).
     """
     prod_labels = {}
     if prod_flag is None and isinstance(dials, dict):
@@ -241,6 +431,9 @@ def resolve_dials(dials, mkt_flag, prod_flag):
                 _norm_int(dials.get("motion")),
                 _norm_int(dials.get("density")),
             ]
+            for v in prod_flag:
+                if v is not None and not (1 <= v <= 10):
+                    raise ValueError("JSON dials values must be between 1 and 10, got %r" % v)
             prod_labels = {
                 "variance_label": dials.get("variance_label"),
                 "motion_label": dials.get("motion_label"),
@@ -307,38 +500,26 @@ def build_body(ds, rounded_scale, type_scale, spacing_scale, mkt, prod, prod_lab
     ]
     sections.append("\n".join(overview))
 
-    # ---- 2. Colors ----
-    color_keys = _color_keys(colors)
-    color_lines = ["## Colors", "", "| Token | Value |", "|---|---|"]
-    for k in color_keys:
-        color_lines.append("| %s | %s |" % (k, _cell(_s(colors.get(k)))))
+    # ---- 2. Colors (token table is a generated block) ----
+    color_lines = ["## Colors", ""]
+    color_lines += _marked("colors", render_colors_block(colors))
     color_lines.append("")
     color_lines.append("**Color strategy**: %s" % _s(pattern.get("color_strategy", ds.get("color_strategy"))))
     color_lines.append("**Notes**: %s" % _s(colors.get("notes")))
     sections.append("\n".join(color_lines))
 
-    # ---- 3. Typography ----
-    typo_lines = [
-        "## Typography",
-        "",
-        "**Heading font**: %s" % _s(typo.get("heading")),
-        "**Body font**: %s" % _s(typo.get("body")),
-        "**Mood**: %s" % _s(typo.get("mood")),
-        "**Best for**: %s" % _s(typo.get("best_for")),
-        "**Google Fonts URL**: %s" % _s(typo.get("google_fonts_url")),
-        "",
-        "```css",
-        "%s" % _s(typo.get("css_import")),
-        "```",
-        "",
-        "| Step | Size |",
-        "|---|---|",
-    ]
-    for tname, tval in type_scale.items():
-        typo_lines.append("| %s | %s |" % (tname, _cell(tval)))
+    # ---- 3. Typography (fonts/URL/import/scale are a generated block) ----
+    typo_lines = ["## Typography", ""]
+    typo_lines += _marked("typography", render_typography_block(
+        typo.get("heading"), typo.get("body"),
+        typo.get("google_fonts_url"), typo.get("css_import"),
+        type_scale))
+    typo_lines.append("")
+    typo_lines.append("**Mood**: %s" % _s(typo.get("mood")))
+    typo_lines.append("**Best for**: %s" % _s(typo.get("best_for")))
     sections.append("\n".join(typo_lines))
 
-    # ---- 4. Layout ----
+    # ---- 4. Layout (spacing table is a generated block) ----
     layout_lines = [
         "## Layout",
         "",
@@ -347,13 +528,8 @@ def build_body(ds, rounded_scale, type_scale, spacing_scale, mkt, prod, prod_lab
         "**CTA placement**: %s" % _s(pattern.get("cta_placement")),
         "**Conversion**: %s" % _s(pattern.get("conversion")),
         "",
-        "**Spacing scale**:",
-        "",
-        "| Token | Value |",
-        "|---|---|",
     ]
-    for sname, sval in spacing_scale.items():
-        layout_lines.append("| %s | %s |" % (sname, _cell(sval)))
+    layout_lines += _marked("spacing", render_spacing_block(spacing_scale))
     sections.append("\n".join(layout_lines))
 
     # ---- 5. Elevation & Depth ----
@@ -366,10 +542,9 @@ def build_body(ds, rounded_scale, type_scale, spacing_scale, mkt, prod, prod_lab
         ])
     )
 
-    # ---- 6. Shapes ----
-    shape_lines = ["## Shapes", "", "| Token | Radius |", "|---|---|"]
-    for rname, rval in rounded_scale.items():
-        shape_lines.append("| %s | %s |" % (rname, _cell(rval)))
+    # ---- 6. Shapes (radius table is a generated block) ----
+    shape_lines = ["## Shapes", ""]
+    shape_lines += _marked("rounded", render_rounded_block(rounded_scale))
     sections.append("\n".join(shape_lines))
 
     # ---- 7. Components ----
@@ -410,9 +585,34 @@ def build_body(ds, rounded_scale, type_scale, spacing_scale, mkt, prod, prod_lab
 # tokens.css generation (DESIGN.md frontmatter -> CSS custom properties)
 # --------------------------------------------------------------------------
 
+_CSS_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _css_name_part(key):
+    """Validate a token key and normalize it (underscores -> hyphens).
+
+    Raises ValueError on keys that cannot become a valid CSS custom property
+    (e.g. names containing spaces) instead of silently emitting broken CSS.
+    """
+    k = str(key).strip()
+    if not _CSS_KEY_RE.match(k):
+        raise ValueError("invalid token key for a CSS custom property: %r" % key)
+    return k.replace("_", "-")
+
+
 def _css_var_name(key):
-    """frontmatter key -> CSS var name: underscores become hyphens."""
-    return "--" + str(key).strip().replace("_", "-")
+    """frontmatter key -> full CSS var name ("--" + normalized key)."""
+    return "--" + _css_name_part(key)
+
+
+def _css_value(v):
+    """Validate a token value before it is interpolated into CSS."""
+    s = str(v).strip()
+    if not s:
+        raise ValueError("empty token value")
+    if any(c in s for c in (";", "{", "}")) or "\n" in s or "\r" in s:
+        raise ValueError("token value is not a single CSS value: %r" % v)
+    return s
 
 
 def build_tokens_css(colors, heading_font, body_font, type_scale, rounded_scale,
@@ -420,7 +620,8 @@ def build_tokens_css(colors, heading_font, body_font, type_scale, rounded_scale,
     """Render the token layer as CSS custom properties on :root.
 
     Pure derivation: every value comes from the DESIGN.md frontmatter maps;
-    nothing is invented here. Empty/TBD values are skipped.
+    nothing is invented here. Empty/TBD values are skipped. Raises ValueError
+    on keys/values that would produce invalid CSS.
     """
     def _ok(v):
         return v is not None and str(v).strip() not in ("", "TBD")
@@ -439,20 +640,20 @@ def build_tokens_css(colors, heading_font, body_font, type_scale, rounded_scale,
     for k in _color_keys(colors):
         v = colors.get(k)
         if _ok(v):
-            lines.append("  %s: %s;" % (_css_var_name(k), str(v).strip()))
+            lines.append("  %s: %s;" % (_css_var_name(k), _css_value(v)))
     if _ok(heading_font):
-        lines.append("  --font-heading: %s;" % str(heading_font).strip())
+        lines.append("  --font-heading: %s;" % _css_value(heading_font))
     if _ok(body_font):
-        lines.append("  --font-body: %s;" % str(body_font).strip())
+        lines.append("  --font-body: %s;" % _css_value(body_font))
     for tname, tval in type_scale.items():
         if _ok(tval):
-            lines.append("  --text-%s: %s;" % (tname, str(tval).strip()))
+            lines.append("  --text-%s: %s;" % (_css_name_part(tname), _css_value(tval)))
     for rname, rval in rounded_scale.items():
         if _ok(rval):
-            lines.append("  --radius-%s: %s;" % (rname, str(rval).strip()))
+            lines.append("  --radius-%s: %s;" % (_css_name_part(rname), _css_value(rval)))
     for sname, sval in spacing_scale.items():
         if _ok(sval):
-            lines.append("  --space-%s: %s;" % (sname, str(sval).strip()))
+            lines.append("  --space-%s: %s;" % (_css_name_part(sname), _css_value(sval)))
     lines.append("}")
     return "\n".join(lines) + "\n"
 
@@ -476,10 +677,63 @@ def _unquote(val):
     return val
 
 
+def _find_top_level_colon(s):
+    """Index of the first ':' outside single/double quotes, or -1.
+
+    Mirrors the behavior of impeccable's findTopLevelColon() so both tools
+    read the same frontmatter the same way (e.g. a quoted key "20": "16px"
+    or a value containing a colon inside quotes).
+    """
+    in_quote = None
+    i = 0
+    while i < len(s):
+        ch = s[i]
+        if in_quote is not None:
+            if ch == "\\" and i + 1 < len(s):
+                i += 2
+                continue
+            if ch == in_quote:
+                in_quote = None
+        elif ch in ("'", '"'):
+            in_quote = ch
+        elif ch == ":":
+            return i
+        i += 1
+    return -1
+
+
+def _strip_inline_comment(s):
+    """Strip a trailing `` # comment`` that sits outside quotes.
+
+    A '#' inside quotes, or one not preceded by whitespace, is part of the
+    value (hex colors like #0066FF must survive).
+    """
+    in_quote = None
+    i = 0
+    while i < len(s):
+        ch = s[i]
+        if in_quote is not None:
+            if ch == "\\" and i + 1 < len(s):
+                i += 2
+                continue
+            if ch == in_quote:
+                in_quote = None
+        elif ch in ("'", '"'):
+            in_quote = ch
+        elif ch == "#" and (i == 0 or s[i - 1] in (" ", "\t")):
+            return s[:i].rstrip()
+        i += 1
+    return s
+
+
 def parse_design_frontmatter(text):
     """Parse the restricted-YAML frontmatter this script emits (nested maps,
     2-space indents, double- or single-quoted scalars, no lists) into nested
     dicts.
+
+    Key/value splitting follows the same rules as impeccable's parser
+    (top-level colon outside quotes, inline comments outside quotes), so a
+    file readable by one tool is readable by the other.
 
     Raises ValueError on anything outside the subset.
     """
@@ -502,11 +756,11 @@ def parse_design_frontmatter(text):
             raise ValueError("tabs are not supported in frontmatter: %r" % raw)
         indent = len(raw) - len(raw.lstrip(" "))
         stripped = raw.strip()
-        if ":" not in stripped:
+        colon = _find_top_level_colon(stripped)
+        if colon == -1:
             raise ValueError("unsupported frontmatter line: %r" % raw)
-        key, _, val = stripped.partition(":")
-        key = _unquote(key)
-        val = val.strip()
+        key = _unquote(stripped[:colon])
+        val = _strip_inline_comment(stripped[colon + 1:]).strip()
         while len(stack) > 1 and indent <= stack[-1][0]:
             stack.pop()
         if indent <= stack[-1][0]:
@@ -521,17 +775,26 @@ def parse_design_frontmatter(text):
     return root
 
 
-def write_tokens_css(path, content):
-    """Tokens file is a generated artifact: always overwritten.
+def write_atomic(path, content):
+    """Write content to path atomically (temp file + os.replace).
 
     Creates the parent directory on demand, so a --tokens-css target inside a
     not-yet-existing directory succeeds instead of raising a bare traceback.
+    A crash mid-write never leaves a truncated file behind.
     """
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(content)
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=parent, prefix=".zedui-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 # --------------------------------------------------------------------------
@@ -542,6 +805,18 @@ def build_document(ds, rounded_scale, type_scale, spacing_scale, mkt, prod, prod
     fm = "\n".join(build_frontmatter(ds, rounded_scale, type_scale, spacing_scale))
     body = build_body(ds, rounded_scale, type_scale, spacing_scale, mkt, prod, prod_labels)
     return fm + "\n" + body + "\n"
+
+
+def _fail(msg):
+    print("error: %s" % msg, file=sys.stderr)
+    sys.exit(1)
+
+
+def _fail_list(header, errors):
+    print("error: %s" % header, file=sys.stderr)
+    for e in errors:
+        print("  - %s" % e, file=sys.stderr)
+    sys.exit(1)
 
 
 def main(argv=None):
@@ -559,65 +834,84 @@ def main(argv=None):
                         help="output markdown path (default: ./DESIGN.md)")
     parser.add_argument("--from-design", default=None, metavar="DESIGN_MD",
                         help="read tokens from an existing DESIGN.md frontmatter instead of "
-                             "a UUPM JSON; requires --tokens-css, emits only the token file")
+                             "a UUPM JSON; regenerates the marked token blocks in the body "
+                             "AND the token CSS file; requires --tokens-css")
     parser.add_argument("--rounded", default=DEFAULT_ROUNDED, metavar="LIST",
                         help="comma-separated corner-radius steps (default: %s)" % DEFAULT_ROUNDED)
     parser.add_argument("--type-scale", default=DEFAULT_TYPE_SCALE, metavar="LIST",
-                        help="comma-separated font-size steps (default: %s)" % DEFAULT_TYPE_SCALE)
+                        help="comma-separated font-size steps, at least 6 (default: %s)" % DEFAULT_TYPE_SCALE)
     parser.add_argument("--marketing-dials", type=parse_dials, default=None, metavar="V,M,D",
                         help="marketing dials: variance,motion,density (1-10 each)")
     parser.add_argument("--product-dials", type=parse_dials, default=None, metavar="V,M,D",
                         help="product dials: variance,motion,density (1-10 each)")
     parser.add_argument("--force", action="store_true",
                         help="overwrite the output file if it already exists")
+    parser.add_argument("--allow-incomplete", action="store_true",
+                        help="accept missing fields/dials and write TBD placeholders "
+                             "(default: fail closed on incomplete input)")
     parser.add_argument("--tokens-css", default=None, metavar="PATH",
                         help="also emit a generated CSS-custom-properties token file "
                              "(always overwritten, never hand-edited)")
     args = parser.parse_args(argv)
 
-    # ---- --from-design mode: DESIGN.md frontmatter -> tokens.css only ----
+    # ---- --from-design mode: DESIGN.md frontmatter -> body blocks + tokens.css ----
     if args.from_design is not None:
         if not args.tokens_css:
-            print("error: --from-design requires --tokens-css", file=sys.stderr)
-            sys.exit(1)
+            _fail("--from-design requires --tokens-css")
         if args.output is not None:
-            print("error: --from-design only emits tokens.css; -o/--output is not supported",
-                  file=sys.stderr)
-            sys.exit(1)
+            _fail("--from-design re-syncs the DESIGN.md in place; -o/--output is not supported")
         if args.input is not None:
-            print("error: --from-design reads DESIGN.md instead of a UUPM JSON; "
-                  "positional INPUT must be omitted", file=sys.stderr)
-            sys.exit(1)
+            _fail("--from-design reads DESIGN.md instead of a UUPM JSON; "
+                  "positional INPUT must be omitted")
         try:
             with open(args.from_design, "r", encoding="utf-8") as fh:
                 design_text = fh.read()
         except OSError as e:
-            print("error: cannot read DESIGN.md: %s" % e, file=sys.stderr)
-            sys.exit(1)
+            _fail("cannot read DESIGN.md: %s" % e)
         try:
             fm = parse_design_frontmatter(design_text)
         except ValueError as e:
-            print("error: cannot parse frontmatter: %s" % e, file=sys.stderr)
-            sys.exit(1)
-        typo = fm.get("typography") or {}
-        css = build_tokens_css(
-            fm.get("colors") or {},
-            (typo.get("heading") or {}).get("fontFamily"),
-            (typo.get("body") or {}).get("fontFamily"),
-            typo.get("scale") or {},
-            fm.get("rounded") or {},
-            fm.get("spacing") or {},
-            args.from_design,
-        )
-        write_tokens_css(args.tokens_css, css)
+            _fail("cannot parse frontmatter: %s" % e)
+        errors = validate_frontmatter_tokens(fm)
+        if errors:
+            _fail_list("frontmatter is incomplete; fix these before re-syncing", errors)
+        typo = fm["typography"]
+        try:
+            blocks = {
+                "colors": render_colors_block(fm["colors"]),
+                "typography": render_typography_block(
+                    (typo.get("heading") or {}).get("fontFamily"),
+                    (typo.get("body") or {}).get("fontFamily"),
+                    typo.get("google_fonts_url"),
+                    typo.get("css_import"),
+                    typo["scale"]),
+                "spacing": render_spacing_block(fm["spacing"]),
+                "rounded": render_rounded_block(fm["rounded"]),
+            }
+            new_text = splice_generated_blocks(design_text, blocks)
+            css = build_tokens_css(
+                fm["colors"],
+                (typo.get("heading") or {}).get("fontFamily"),
+                (typo.get("body") or {}).get("fontFamily"),
+                typo["scale"],
+                fm["rounded"],
+                fm["spacing"],
+                args.from_design,
+            )
+        except ValueError as e:
+            _fail(str(e))
+        # Both outputs are fully built before anything is written; each write
+        # is atomic, so a failure here can never leave a truncated file.
+        if new_text != design_text:
+            write_atomic(args.from_design, new_text)
+        write_atomic(args.tokens_css, css)
         return
 
     if args.output is None:
         args.output = "DESIGN.md"
 
     if args.input is None:
-        print("error: INPUT is required (or use --from-design)", file=sys.stderr)
-        sys.exit(1)
+        _fail("INPUT is required (or use --from-design)")
 
     if args.input == "-":
         raw = sys.stdin.read()
@@ -626,25 +920,21 @@ def main(argv=None):
             with open(args.input, "r", encoding="utf-8") as fh:
                 raw = fh.read()
         except OSError as e:
-            print("error: cannot read input: %s" % e, file=sys.stderr)
-            sys.exit(1)
+            _fail("cannot read input: %s" % e)
 
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
-        print("error: invalid JSON: %s" % e, file=sys.stderr)
-        sys.exit(1)
+        _fail("invalid JSON: %s" % e)
 
     if isinstance(data, dict) and "design_system" in data:
         ds = data["design_system"]
     elif isinstance(data, dict):
         ds = data
     else:
-        print("error: expected a JSON object, got %s" % type(data).__name__, file=sys.stderr)
-        sys.exit(1)
+        _fail("expected a JSON object, got %s" % type(data).__name__)
     if not isinstance(ds, dict):
-        print("error: design_system must be a JSON object", file=sys.stderr)
-        sys.exit(1)
+        _fail("design_system must be a JSON object")
 
     rounded_values = parse_comma_list(args.rounded) or parse_comma_list(DEFAULT_ROUNDED)
     type_values = parse_comma_list(args.type_scale) or parse_comma_list(DEFAULT_TYPE_SCALE)
@@ -652,29 +942,41 @@ def main(argv=None):
     type_scale = build_type_scale(type_values)
     spacing_scale = build_spacing_scale(ds.get("spacing_scale"))
 
-    mkt, prod, prod_labels = resolve_dials(ds.get("dials"), args.marketing_dials, args.product_dials)
-    document = build_document(ds, rounded_scale, type_scale, spacing_scale, mkt, prod, prod_labels)
+    try:
+        mkt, prod, prod_labels = resolve_dials(ds.get("dials"), args.marketing_dials, args.product_dials)
+    except ValueError as e:
+        _fail(str(e))
+
+    if not args.allow_incomplete:
+        errors = validate_design_system(ds, mkt, prod, type_scale)
+        if errors:
+            _fail_list("incomplete design system (re-run with --allow-incomplete to "
+                       "land TBD placeholders anyway)", errors)
+
+    try:
+        document = build_document(ds, rounded_scale, type_scale, spacing_scale, mkt, prod, prod_labels)
+        css = None
+        if args.tokens_css:
+            typo = ds.get("typography") or {}
+            css = build_tokens_css(
+                ds.get("colors") or {},
+                typo.get("heading"),
+                typo.get("body"),
+                type_scale,
+                rounded_scale,
+                spacing_scale,
+                args.output,
+            )
+    except ValueError as e:
+        _fail(str(e))
 
     if os.path.exists(args.output) and not args.force:
-        print("error: output file already exists: %s (use --force to overwrite)" % args.output,
-              file=sys.stderr)
-        sys.exit(1)
+        _fail("output file already exists: %s (use --force to overwrite)" % args.output)
 
-    with open(args.output, "w", encoding="utf-8") as fh:
-        fh.write(document)
-
-    if args.tokens_css:
-        typo = ds.get("typography") or {}
-        css = build_tokens_css(
-            ds.get("colors") or {},
-            typo.get("heading"),
-            typo.get("body"),
-            type_scale,
-            rounded_scale,
-            spacing_scale,
-            args.output,
-        )
-        write_tokens_css(args.tokens_css, css)
+    # Everything is built and validated above; writes are atomic per file.
+    write_atomic(args.output, document)
+    if css is not None:
+        write_atomic(args.tokens_css, css)
 
 
 if __name__ == "__main__":
