@@ -57,8 +57,9 @@ export PUPPETEER_EXECUTABLE_PATH="<你的 Chrome 可执行文件路径>"
 
 依次运行（路径用第 2/3 步解析出的实际位置）：
 
-1. `python3 <ui-ux-pro-max>/scripts/search.py "dashboard" --domain style` —— 应返回风格建议而非报错
-2. `node <impeccable>/scripts/detector/detect-antipatterns.mjs --help`（若该路径不存在，在 impeccable 目录内搜索 `detect-antipatterns.mjs` 的实际位置）—— 应输出用法说明
+1. `python3 <ui-ux-pro-max>/scripts/search.py "dashboard" --domain style` —— 应返回风格建议而非报错（单项冒烟，不代替第 4 步的全链路体检）
+2. `node <impeccable>/scripts/detect.mjs --help`（公开入口；旧版本没有它时回退 `scripts/detector/detect-antipatterns.mjs`）—— 应输出用法说明
 3. `python3 <zedui>/scripts/uupm_to_design.py --help` —— 应输出用法说明
+4. **`python3 <zedui>/scripts/doctor.py`** —— 全链路安装体检：五个 skill 解析、impeccable 版本与公开检测入口、UUPM `--design-system --json` 真实契约探测、zedui 脚本可编译。**critical checks 全过才算安装完成**；⚠️ warning（如 impeccable 版本与实测基线不同、重复安装提示）如实向我汇报即可，但 ✗ critical failure 必须修复后重跑，不能当安装成功。
 
-三项全过后，向我汇报：五个 skill 的安装路径、Chrome 路径（如配置）、以及一句确认——"zedui 安装完成，对你的项目说『用 zedui 做 UI』即可开始"。
+全部通过后，向我汇报：五个 skill 的安装路径、doctor 体检结果摘要、Chrome 路径（如配置）、以及一句确认——"zedui 安装完成，对你的项目说『用 zedui 做 UI』即可开始"。

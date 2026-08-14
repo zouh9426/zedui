@@ -301,7 +301,7 @@ detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准�
 ## Phase 3：迭代与规范演进
 
 - **每次 UI 变更都经过本工作流**：读 DESIGN.md → Phase 1 路由 → 构建 → Phase 2 审查。不绕过。
-- **规范演进唯一入口是改 DESIGN.md frontmatter**：用户确认的设计变更（换色、加字体、调圆角）→ 直接编辑 DESIGN.md frontmatter 对应字段 → 重跑 `uupm_to_design.py --from-design DESIGN.md --tokens-css <token文件>`——它会从 frontmatter **同时再生正文里 `<!-- zedui:generated:* -->` 标记内的 token 表格和 tokens.css**，三层同步，不存在"frontmatter 改了正文还是旧值"的窗口。**重同步与 Phase 0 落盘跑同一强度的契约校验**：手改时误删必需色角色、删掉 `scale.base`/`scale.2xl`、写出非法 CSS key 都会被拒绝并逐项列出（草案期才用 `--allow-incomplete` 放宽）→ 重跑 detector 确认现有代码与新规范的兼容情况，漂移处回流生产者修。
+- **规范演进的入口分两类**：token 类全局规范（颜色/字体/字号/圆角/间距）唯一入口是改 DESIGN.md frontmatter——用户确认的设计变更 → 直接编辑 frontmatter 对应字段 → 重跑 `uupm_to_design.py --from-design DESIGN.md --tokens-css <token文件>`——它会从 frontmatter **同时再生正文里 `<!-- zedui:generated:* -->` 标记内的 token 表格和 tokens.css**，三层同步，不存在"frontmatter 改了正文还是旧值"的窗口。**重同步与 Phase 0 落盘跑同一强度的契约校验**：手改时误删必需色角色、删掉 `scale.base`/`scale.2xl`、写出非法 CSS key 都会被拒绝并逐项列出（草案期才用 `--allow-incomplete` 放宽）→ 重跑 detector 确认现有代码与新规范的兼容情况，漂移处回流生产者修。marketing/product dials 不是 token，保存在 Overview 的 dial 表（人工区）——调整时经用户确认后直接更新该表，不走 frontmatter。
 - 正文标记区以外的内容（风格意图、策略说明、`## Components`）是人工维护区，脚本永不触碰；interface-design 沉淀的组件规范只追加进 `## Components` 节；全局 token 的变更只能由用户拍板后改 frontmatter。
 - 旧版脚本（v0.4 之前）生成的 DESIGN.md 没有 generated 标记，`--from-design` 会拒绝并提示——用原始 JSON 加 `--force` 重新生成一次即可迁入新格式。
 

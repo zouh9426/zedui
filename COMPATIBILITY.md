@@ -1,6 +1,6 @@
 # COMPATIBILITY — 上游版本契约
 
-> 本文件记录 **zedui v0.4.0** 实测通过的上游版本契约。上游漂移时以 `doctor.py` 的本机实时体检结果为准（`python3 "$ZEDUI_HOME/scripts/doctor.py"`）——本表只是已实测的基线，不替代运行时真实状态。
+> 本文件记录 **zedui v0.4.0** 实测通过的上游版本契约。当前安装副本是否满足 zedui 契约，以 `doctor.py` 的本机体检结果为准（`python3 "$ZEDUI_HOME/scripts/doctor.py"`）；public upstream 是否发生更新需独立核对版本 / commit provenance——doctor 是离线体检，看不到 GitHub 上游。
 
 ## zedui-design-schema-v1
 
@@ -23,4 +23,4 @@ DESIGN.md 的文档契约：YAML frontmatter 是全部 token 值的唯一事实�
 
 - 无版本号字段的上游以实测日期为基线；其协议/行为变更无法用版本号识别，接入或升级后请用 `doctor.py` 复核。
 - 本表"实测"均指**本机安装副本**；public upstream 仓库的最新动态（如 impeccable 4.1.1、UUPM semantic palette）单列说明，不与本地基线混为一谈。doctor.py 是离线体检，只对本地安装负责。
-- 本仓库不锁定上游版本；任何上游漂移都以 `doctor.py` 的实时体检结果为准。
+- 本仓库不锁定上游版本；本机安装副本是否满足契约以 `doctor.py` 的实时体检结果为准。
