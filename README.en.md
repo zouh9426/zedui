@@ -44,7 +44,7 @@ Iteration: every UI change goes through Phase 1 → Phase 2; spec evolution happ
 
 **Recommended (let your AI do it)**: open [SETUP.en.md](SETUP.en.md) and paste the entire file into your AI agent — it will check dependencies, install the five skills, configure the browser engine, and run self-checks automatically.
 
-**Manual**: copy this repo's `zedui/` directory into your AI tool's skills directory (e.g. `~/.agents/skills/`, `~/.claude/skills/`, `~/.kimi-code/skills/`, `~/.codex/skills/`) and install the four companion skills per the table above. Skills recognize each other by the `name:` field in their frontmatter — directory names and tools don't matter.
+**Manual**: copy this repo's `zedui/` directory into your AI tool's skills directory (e.g. `~/.agents/skills/`, `~/.claude/skills/`, `~/.kimi-code/skills/`, `~/.codex/skills/`) and install the four companion skills per the table above. Skills recognize each other by the `name:` field in their frontmatter — directory names and tools don't matter. When health-checking, prefer passing the resolved skill paths explicitly to doctor (`--skill-home <skill>=<path>`, partial sets allowed) — doctor's auto-discovery is a compatibility fallback only and does not replicate each host's loader precedence; invalid explicit paths fail closed.
 
 ## Usage
 

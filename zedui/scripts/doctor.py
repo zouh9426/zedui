@@ -18,9 +18,23 @@ against the LOCALLY INSTALLED copies — an offline probe cannot know whether
 public upstream has moved; version differences are reported against the
 tested baseline in COMPATIBILITY.md, never as "upstream drift".
 
-Skill resolution candidate order (project-level first, first hit wins):
-    <project-root>/.agents/skills/   ~/.agents/skills/
-    ~/.kimi-code/skills/             ~/.claude/skills/   ~/.codex/skills/
+Skill resolution: callers that already know which copy their host actually
+loads (the orchestrator's environment-probing step) SHOULD pass those
+authoritative paths explicitly::
+
+    doctor.py --skill-home impeccable=/path/to/impeccable ...
+
+Explicit paths win over auto-discovery and are validated fail-closed (must
+exist, be a directory, contain a SKILL.md whose frontmatter ``name:``
+matches; a bad explicit path is a critical failure, never a silent fallback).
+Auto-discovery is a convenience fallback only — it does NOT claim to
+replicate every host's loader precedence; when several installs exist it
+reports which copy it selected and says so.
+
+Auto-discovery candidate order (project-level first, first hit wins):
+    <project-root>/.agents/skills/     <project-root>/.kimi-code/skills/
+    <project-root>/.claude/skills/     ~/.agents/skills/
+    ~/.kimi-code/skills/               ~/.claude/skills/   ~/.codex/skills/
 
 Every check prints a one-line ✓/✗/⚠ result; the summary drives the exit
 code — any critical check failing exits 1. Warnings (installed impeccable
@@ -32,16 +46,23 @@ shared bridge contract probe is a critical failure.
 Pure standard library (stdlib only). Python 3.8+.
 
 Usage:
-    doctor.py [--project-root PATH]
+    doctor.py [--project-root PATH] [--skill-home SKILL=PATH ...]
 
     --project-root   project root to health-check (default: current
-                     directory). Used for the project-level skill install
-                     (.agents/skills/) and for the DESIGN.md / tokens.css
-                     sync check.
+                     directory). Used for the project-level skill installs
+                     (.agents/.kimi-code/.claude under it) and for the
+                     DESIGN.md / tokens.css sync check.
+    --skill-home     authoritative install path for one skill, e.g.
+                     ``--skill-home impeccable=/path/to/impeccable``.
+                     Repeatable; any subset of the five skills may be given.
+                     Explicit paths are validated fail-closed and take
+                     precedence over auto-discovery; skills without an
+                     explicit path fall back to auto-discovery.
 
 Exit codes:
     0  all critical checks passed
     1  at least one critical check failed
+    2  usage error (e.g. malformed --skill-home)
 """
 
 import argparse
@@ -98,11 +119,57 @@ def candidate_dirs(project_root):
     home = os.path.expanduser("~")
     return [
         os.path.join(project_root, ".agents", "skills"),
+        os.path.join(project_root, ".kimi-code", "skills"),
+        os.path.join(project_root, ".claude", "skills"),
         os.path.join(home, ".agents", "skills"),
         os.path.join(home, ".kimi-code", "skills"),
         os.path.join(home, ".claude", "skills"),
         os.path.join(home, ".codex", "skills"),
     ]
+
+
+def parse_skill_homes(pairs):
+    """Parse repeated --skill-home SKILL=PATH values into {skill: path}.
+
+    Raises ValueError on a malformed pair or an unknown skill name (the
+    caller turns that into a usage error, exit 2).
+    """
+    homes = {}
+    for pair in pairs:
+        if "=" not in pair:
+            raise ValueError("malformed --skill-home %r (expected SKILL=PATH)" % pair)
+        skill, path = pair.split("=", 1)
+        skill = skill.strip().lower()
+        path = path.strip()
+        if skill not in SKILL_NAMES:
+            raise ValueError("unknown skill in --skill-home: %r (known: %s)"
+                             % (skill, ", ".join(SKILL_NAMES)))
+        if not path:
+            raise ValueError("empty path in --skill-home %r" % pair)
+        homes[skill] = path
+    return homes
+
+
+def validate_explicit_home(skill, path):
+    """Validate an explicit --skill-home path. Returns an error string, or
+    None when the path is a usable authoritative HOME for ``skill``.
+
+    Fail-closed by design: an explicit path is the caller's claim that the
+    host loads THIS copy — silently falling back to another copy would
+    re-create the false-green this flag exists to prevent.
+    """
+    if not os.path.exists(path):
+        return "explicit path does not exist: %s" % path
+    if not os.path.isdir(path):
+        return "explicit path is not a directory: %s" % path
+    smd = os.path.join(path, "SKILL.md")
+    if not os.path.isfile(smd):
+        return "no SKILL.md in explicit path: %s" % path
+    name = _read_frontmatter_field(smd, "name")
+    if name is None or name.strip().lower() != skill.lower():
+        return ("SKILL.md name mismatch in %s: expected %r, found %r"
+                % (smd, skill, name))
+    return None
 
 
 def _read_frontmatter_field(path, field):
@@ -319,8 +386,17 @@ def main(argv=None):
     )
     parser.add_argument("--project-root", default=None, metavar="PATH",
                         help="project root to check (default: current directory)")
+    parser.add_argument("--skill-home", action="append", default=[],
+                        metavar="SKILL=PATH", dest="skill_home",
+                        help="authoritative install path for one skill "
+                             "(repeatable); explicit paths are validated "
+                             "fail-closed and override auto-discovery")
     args = parser.parse_args(argv)
     project_root = os.path.abspath(args.project_root or os.getcwd())
+    try:
+        explicit_homes = parse_skill_homes(args.skill_home)
+    except ValueError as e:
+        parser.error(str(e))  # usage error, exit 2
 
     critical_fail = False
     results = []  # (section, status) with status in ok/fail/warn/skip
@@ -340,6 +416,17 @@ def main(argv=None):
     dirs = candidate_dirs(project_root)
     homes = {}
     for skill in SKILL_NAMES:
+        if skill in explicit_homes:
+            path = explicit_homes[skill]
+            err = validate_explicit_home(skill, path)
+            if err is not None:
+                emit(1, "fail", "%s: %s (explicit --skill-home is fail-closed; "
+                     "no fallback to auto-discovery)" % (skill, err))
+                critical_fail = True
+                continue
+            homes[skill] = path
+            emit(1, "ok", "%s -> %s [explicit]" % (skill, path))
+            continue
         hits = resolve_skill(skill, dirs)
         if not hits:
             emit(1, "fail",
@@ -349,9 +436,13 @@ def main(argv=None):
             continue
         idx, cand, smd = hits[0]
         homes[skill] = os.path.dirname(smd)
-        emit(1, "ok", "%s -> %s" % (skill, homes[skill]))
+        emit(1, "ok", "%s -> %s [auto-discovered]" % (skill, homes[skill]))
         for _, dup_cand, dup_smd in hits[1:]:
-            emit(1, "warn", "%s also installed at: %s" % (skill, dup_smd))
+            emit(1, "warn",
+                 "%s also installed at: %s — auto-discovery selected the first "
+                 "hit; host-specific precedence may differ. Pass "
+                 "--skill-home %s=<path> to validate the copy your host "
+                 "actually loads." % (skill, dup_smd, skill))
 
     # ---- [2/6] impeccable version -----------------------------------------
     print("")
@@ -515,7 +606,8 @@ def main(argv=None):
                             (typo.get("body") or {}).get("fontFamily"),
                             typo.get("google_fonts_url"),
                             typo.get("css_import"),
-                            typo["scale"]),
+                            typo["scale"],
+                            mono_font=utd._mono_font(typo)),
                         "spacing": utd.render_spacing_block(fm["spacing"]),
                         "rounded": utd.render_rounded_block(fm["rounded"]),
                     }
@@ -556,6 +648,7 @@ def main(argv=None):
                             fm["rounded"],
                             fm["spacing"],
                             design_path,
+                            mono_font=utd._mono_font(typo),
                         )
                     except (KeyError, ValueError, TypeError) as e:
                         emit(6, "fail", "%s: cannot regenerate tokens from "

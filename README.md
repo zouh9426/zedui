@@ -43,7 +43,7 @@ Phase 2 审查：context.mjs 引导（每 session 一次）→ critique（A/B �
 
 **推荐方式（AI 代办）**：打开 [SETUP.md](SETUP.md)，把全文贴给你的 AI agent，它会自动检查依赖、安装五个 skill、配置浏览器引擎并自检。
 
-**手动方式**：把本仓库的 `zedui/` 目录拷进你的 AI 工具的技能目录（如 `~/.agents/skills/`、`~/.claude/skills/`、`~/.kimi-code/skills/`、`~/.codex/skills/`），并按上表安装四个配套 skill。skill 之间按 frontmatter 的 `name:` 互相识别，不挑目录名、不挑工具。
+**手动方式**：把本仓库的 `zedui/` 目录拷进你的 AI 工具的技能目录（如 `~/.agents/skills/`、`~/.claude/skills/`、`~/.kimi-code/skills/`、`~/.codex/skills/`），并按上表安装四个配套 skill。skill 之间按 frontmatter 的 `name:` 互相识别，不挑目录名、不挑工具。体检时建议把已解析的五个 skill 路径显式传给 doctor（`--skill-home <skill>=<路径>`，可只传部分）——doctor 的自动发现只是兼容 fallback，不复制各宿主的 loader 优先级；显式路径无效会 fail-closed。
 
 ## 使用
 

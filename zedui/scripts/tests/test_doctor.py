@@ -57,8 +57,9 @@ def _fake_search_py_source():
     """Source text of a fake UUPM search.py that really answers doctor's
     ``--design-system --json`` probe with a minimal contract-valid payload
     (design_system wrapper, all required color roles, typography
-    heading/body, spacing_scale, dials). It ignores argv — the probe only
-    checks that the process exits 0 and emits contract-valid JSON."""
+    heading/body, spacing_scale, dials). It asserts the probe actually passes
+    a positional query plus --design-system/--json, so a future doctor that
+    accidentally drops them fails here instead of silently passing."""
     import uupm_to_design as utd
     payload = {"design_system": {
         "project_name": "FakeUUPM",
@@ -67,7 +68,12 @@ def _fake_search_py_source():
         "spacing_scale": {"md": "16px"},
         "dials": {"variance": 3, "motion": 4, "density": 5},
     }}
-    return "import json\nprint(json.dumps(%r))\n" % payload
+    return ("import json, sys\n"
+            "argv = sys.argv[1:]\n"
+            "assert any(not a.startswith('-') for a in argv), 'missing positional query'\n"
+            "assert '--design-system' in argv, 'missing --design-system'\n"
+            "assert '--json' in argv, 'missing --json'\n"
+            "print(json.dumps(%r))\n" % payload)
 
 
 def _full_skill_tree(root, version=None, with_scripts=True):
@@ -106,11 +112,23 @@ def _full_skill_tree(root, version=None, with_scripts=True):
     return dirs
 
 
-def _run_doctor(project_root, skill_dirs):
+def _run_doctor(project_root, skill_dirs, extra_args=None):
     """Run doctor.main in-process with candidate_dirs patched to the fake
     skill dirs. Returns (exit_code, full_output)."""
     buf = io.StringIO()
+    argv = ["--project-root", project_root] + list(extra_args or [])
     with mock.patch.object(doctor, "candidate_dirs", return_value=skill_dirs):
+        with contextlib.redirect_stdout(buf):
+            rc = doctor.main(argv)
+    return rc, buf.getvalue()
+
+
+def _run_doctor_real_dirs(project_root, fake_home):
+    """Run doctor.main with the REAL candidate_dirs() but HOME pointed at an
+    empty temp dir, so only project-level scopes under project_root resolve.
+    Returns (exit_code, full_output)."""
+    buf = io.StringIO()
+    with mock.patch.dict(os.environ, {"HOME": fake_home}):
         with contextlib.redirect_stdout(buf):
             rc = doctor.main(["--project-root", project_root])
     return rc, buf.getvalue()
@@ -382,6 +400,109 @@ class TestUupmSearchResolution(unittest.TestCase):
             self.assertEqual(rc, 1, out)
             self.assertIn("multiple search.py candidates", out)
             self.assertIn("refusing to guess", out)
+
+
+class TestExplicitSkillHomes(unittest.TestCase):
+    """--skill-home SKILL=PATH gives the caller's authoritative (host-real)
+    install top priority; invalid explicit paths fail closed and never fall
+    back to auto-discovery; auto-discovery covers project-level
+    .kimi-code/skills and .claude/skills scopes."""
+
+    def _tree(self, td):
+        dirs = _full_skill_tree(td)
+        proj_root = os.path.join(td, "proj-root")
+        os.makedirs(proj_root)
+        return dirs, proj_root
+
+    def test_explicit_home_wins_over_auto(self):
+        with tempfile.TemporaryDirectory() as td:
+            dirs, proj_root = self._tree(td)
+            auto_imp = dirs["impeccable"]
+            # a second, distinguishable impeccable the host actually loads
+            exp = os.path.join(td, "host-real")
+            exp_imp = _write_skill(exp, "imp-real", "impeccable", version="9.9.9")
+            os.makedirs(os.path.join(exp_imp, "scripts"))
+            for fn in ("context.mjs", "detect.mjs"):
+                _write(os.path.join(exp_imp, "scripts", fn), "// stub\n")
+            rc, out = _run_doctor(proj_root, [td], extra_args=[
+                "--skill-home", "impeccable=%s" % exp_imp])
+            self.assertEqual(rc, 0, out)
+            self.assertIn("impeccable -> %s [explicit]" % exp_imp, out)
+            # every downstream impeccable check ran against the explicit copy:
+            # version section reports B's 9.9.9, never A's tested baseline
+            self.assertIn("installed version: 9.9.9", out)
+            self.assertNotIn("%s [auto-discovered]" % auto_imp, out)
+
+    def test_partial_explicit_rest_auto(self):
+        with tempfile.TemporaryDirectory() as td:
+            dirs, proj_root = self._tree(td)
+            rc, out = _run_doctor(proj_root, [td], extra_args=[
+                "--skill-home", "impeccable=%s" % dirs["impeccable"],
+                "--skill-home", "ui-ux-pro-max=%s" % dirs["ui-ux-pro-max"]])
+            self.assertEqual(rc, 0, out)
+            self.assertIn("impeccable -> %s [explicit]" % dirs["impeccable"], out)
+            self.assertIn("[auto-discovered]", out)  # the other three
+
+    def test_explicit_missing_path_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            _dirs, proj_root = self._tree(td)  # auto copy exists!
+            missing = os.path.join(td, "no-such-dir")
+            rc, out = _run_doctor(proj_root, [td], extra_args=[
+                "--skill-home", "impeccable=%s" % missing])
+            self.assertEqual(rc, 1, out)
+            self.assertIn("explicit path does not exist", out)
+            # no silent fallback: no successful resolution line for impeccable
+            self.assertNotIn("impeccable -> ", out)
+
+    def test_explicit_name_mismatch_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            _dirs, proj_root = self._tree(td)
+            wrong = _write_skill(td, "wrong-one", "something-else")
+            rc, out = _run_doctor(proj_root, [td], extra_args=[
+                "--skill-home", "impeccable=%s" % wrong])
+            self.assertEqual(rc, 1, out)
+            self.assertIn("name mismatch", out)
+
+    def test_project_kimi_code_scope(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = os.path.join(td, "proj")
+            os.makedirs(proj)
+            _full_skill_tree(os.path.join(proj, ".kimi-code", "skills"))
+            fake_home = os.path.join(td, "empty-home")
+            os.makedirs(fake_home)
+            rc, out = _run_doctor_real_dirs(proj, fake_home)
+            self.assertEqual(rc, 0, out)
+            self.assertIn(".kimi-code", out)
+
+    def test_project_claude_scope(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = os.path.join(td, "proj")
+            os.makedirs(proj)
+            _full_skill_tree(os.path.join(proj, ".claude", "skills"))
+            fake_home = os.path.join(td, "empty-home")
+            os.makedirs(fake_home)
+            rc, out = _run_doctor_real_dirs(proj, fake_home)
+            self.assertEqual(rc, 0, out)
+            self.assertIn(".claude", out)
+
+    def test_duplicate_auto_but_explicit_wins(self):
+        with tempfile.TemporaryDirectory() as td:
+            d1 = os.path.join(td, "skills-a")
+            d2 = os.path.join(td, "skills-b")
+            dirs1 = _full_skill_tree(d1)
+            os.makedirs(d2)
+            imp_b = _write_skill(d2, "impeccable-copy", "impeccable", version=TESTED)
+            for fn in ("context.mjs", "detect.mjs"):
+                os.makedirs(os.path.join(imp_b, "scripts"), exist_ok=True)
+                _write(os.path.join(imp_b, "scripts", fn), "// stub\n")
+            proj_root = os.path.join(td, "proj-root")
+            os.makedirs(proj_root)
+            rc, out = _run_doctor(proj_root, [d1, d2], extra_args=[
+                "--skill-home", "impeccable=%s" % imp_b])
+            self.assertEqual(rc, 0, out)
+            self.assertIn("impeccable -> %s [explicit]" % imp_b, out)
+            # the auto-discovered duplicate must not displace the explicit pick
+            self.assertNotIn("impeccable -> %s" % dirs1["impeccable"], out)
 
 
 class TestMissingSkillEnvironment(unittest.TestCase):
