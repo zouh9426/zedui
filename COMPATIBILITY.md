@@ -1,6 +1,6 @@
 # COMPATIBILITY — 上游版本契约
 
-> 本文件记录 **zedui v0.4.0** 实测通过的上游版本契约。当前安装副本是否满足 zedui 契约，以 `doctor.py` 的本机体检结果为准（`python3 "$ZEDUI_HOME/scripts/doctor.py"`）；public upstream 是否发生更新需独立核对版本 / commit provenance——doctor 是离线体检，看不到 GitHub 上游。
+> 本文件记录 **zedui v0.4.1** 实测通过的上游版本契约（v0.4.0 建立基线，2026-08-15 zedcheck Heavy 在 v0.4.1 工作树上对关键契约复测确认不变）。当前安装副本是否满足 zedui 契约，以 `doctor.py` 的本机体检结果为准（`python3 "$ZEDUI_HOME/scripts/doctor.py"`）；public upstream 是否发生更新需独立核对版本 / commit provenance——doctor 是离线体检，看不到 GitHub 上游。
 
 ## zedui-design-schema-v1
 

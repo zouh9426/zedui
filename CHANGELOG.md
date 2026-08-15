@@ -2,13 +2,14 @@
 
 本项目所有值得记录的变更都写在这里。格式约定：每条目回答两个问题——**改了什么**、**为什么这么改（决策理由）**。
 
-## [Unreleased]
-
-- **no-private-paths 检查模式拓宽**：原 grep 只查 `/Users/...` 一种形态，home 相对写法（`~/…`）和 Linux/Windows 用户目录形态全部漏网（v0.4.0 的历史残留正是从此洞漏入、事后靠重写历史清除）。现覆盖五类形态；`[D]`/`[U]` 字符类写法保证检查器自身与规则描述文字不自命中。理由：隐私红线的事前闸门必须比"事后改写历史"便宜。
-
 ## [0.4.1] - 2026-08-15
 
-compatibility / release-hardening patch：第一轮修四处已确认问题（无架构变更）；第二轮追加 doctor 宿主对齐与 A/B 试点回流修复，其中包含一个 schema 小增补（`typography.mono` 可选角色）与 token_lint 边界修正。
+compatibility / release-hardening patch：第一轮修四处已确认问题（无架构变更）；第二轮追加 doctor 宿主对齐与 A/B 试点回流修复，其中包含一个 schema 小增补（`typography.mono` 可选角色）与 token_lint 边界修正；第三/四轮为验收打回修复与发布后审计收尾（tag 定版时一并并入）。
+
+### 第四轮（zedcheck Heavy 审计收尾 + CI 红线拓宽）
+
+- **zedcheck Heavy 全项目审计收尾**：① SKILL.md 三处命名统一为品牌小写（frontmatter description 的 `UI-UX-Pro-Max` → `ui-ux-pro-max`，26/242 行 `ZedUI 硬门禁` → `zedui 硬门禁`）——0.3.2 已确立"skill 名引用统一品牌小写"，这三处是漏网；② COMPATIBILITY.md 头部版本标签 v0.4.0 → v0.4.1 并注明 Heavy 复测——契约在 v0.4.1 工作树上实测不变，旧标签会让下一名 Agent 误以为 v0.4.1 未验证；③ `.gitignore` 补 `__pycache__/` 与 `.pytest_cache/`——本地跑测试/脚本必然产生这两类缓存，此前靠 pytest 内部自忽略兜底，根因修复防反复。审计本体（83 单测、doctor 全链路、桥接三层一致、token_lint 边界）未发现行为缺陷。理由：一致性缺陷虽小，但 skill 的读者是下游 Agent，命名/版本标签的口径不一是最低成本的误导源。
+- **no-private-paths 检查模式拓宽**：原 grep 只查 `/Users/...` 一种形态，home 相对写法（`~/…`）和 Linux/Windows 用户目录形态全部漏网（v0.4.0 的历史残留正是从此洞漏入、事后靠重写历史清除）。现覆盖五类形态；`[D]`/`[U]` 字符类写法保证检查器自身与规则描述文字不自命中。理由：隐私红线的事前闸门必须比"事后改写历史"便宜。
 
 ### 第三轮（验收打回修复）
 

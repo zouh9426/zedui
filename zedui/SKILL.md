@@ -1,6 +1,6 @@
 ---
 name: zedui
-description: 项目级 UI 规范编排工作流。项目开局时用 UI-UX-Pro-Max 定方向并生成唯一规范文件 DESIGN.md；随后按页面类型路由到 design-taste-frontend（营销/落地页）或 interface-design（产品页/后台/仪表盘）；每个页面完成后用 Impeccable 做审查（critique 设计评审 + audit 技术审计），再由 zedui 硬门禁做机械把关，修复回流给生产者。Use when starting a new project's UI design, establishing or evolving DESIGN.md, building any UI page, or auditing UI consistency.
+description: 项目级 UI 规范编排工作流。项目开局时用 ui-ux-pro-max 定方向并生成唯一规范文件 DESIGN.md；随后按页面类型路由到 design-taste-frontend（营销/落地页）或 interface-design（产品页/后台/仪表盘）；每个页面完成后用 Impeccable 做审查（critique 设计评审 + audit 技术审计），再由 zedui 硬门禁做机械把关，修复回流给生产者。Use when starting a new project's UI design, establishing or evolving DESIGN.md, building any UI page, or auditing UI consistency.
 ---
 
 # zedui — UI 规范编排工作流
@@ -23,7 +23,7 @@ description: 项目级 UI 规范编排工作流。项目开局时用 UI-UX-Pro-M
 ```
 Phase 0 开局：提问 → UUPM 出方案 → 用户确认 → 桥接脚本生成 DESIGN.md
 Phase 1 生产：按页面类型路由 → Taste / interface-design / UUPM 兜底，全部以 DESIGN.md 为规范
-Phase 2 审查：context 引导 → critique（A/B 隔离评审）→ audit → ZedUI 硬门禁 → 修复回流 → 复评
+Phase 2 审查：context 引导 → critique（A/B 隔离评审）→ audit → zedui 硬门禁 → 修复回流 → 复评
 迭代期：任何 UI 变更都走 Phase 1 → Phase 2；token 类规范演进通过修改 DESIGN.md frontmatter；marketing/product dials 按 Phase 3 更新 DESIGN.md Overview 的 dial 表
 ```
 
@@ -239,7 +239,7 @@ node "$IMP_HOME/scripts/context.mjs" --target <当前页面/组件路径>
 
 按 Impeccable 自己 SKILL.md 的命令协议调用；**只用它的审查类命令，不用 build/fix 类命令**（polish/shape/animate 等一律不用）。
 
-### 2.3 ZedUI 硬门禁（机械把关，全部通过才算审查通过）
+### 2.3 zedui 硬门禁（机械把关，全部通过才算审查通过）
 
 critique/audit 是判断层；以下机械检查由编排层直接把关。
 
