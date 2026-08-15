@@ -11,7 +11,7 @@
 ## 红线
 
 1. **任何文件不得包含私人绝对路径**（`/Users/...`、个人 home 目录、本机特有配置）。SKILL.md 用「环境探测」机制在运行时解析路径，源码里永不写死。
-2. 提交前必须跑：`grep -rnE '/Users/[a-zA-Z0-9_-]+/' . --exclude-dir=.git`，有输出就不许 commit（该模式只匹配真实路径，不会误伤规则自身的描述文字）。CI（`.github/workflows/no-private-paths.yml`）会在 push 时兜底检查，红了必须修。
+2. 提交前必须跑：`grep -rnE '(/Users/[a-zA-Z0-9_-]+/|/home/[a-zA-Z0-9_-]+/|~/[D]ocuments/|~/[D]esktop/|C:\\[U]sers\\)' . --exclude-dir=.git`，有输出就不许 commit（模式里的 `[D]`/`[U]` 字符类写法既匹配目标又让规则自身的描述文字不自命中）。CI（`.github/workflows/no-private-paths.yml`）会在 push 时兜底检查，红了必须修。
 3. 不留垃圾文件：交接文档、临时试点产物等用完即删，不进仓库。
 4. **实测依据一律匿名化**：CHANGELOG / commit message / Release notes / 文档中引用实战项目时，禁止出现用户项目名、内部任务编号、项目内路径等可识别信息——一律写"某生产项目"这类通用表述。公开仓库里，可识别信息与隐私同罪；已发生泄漏时连 git 历史一起改写清除。
 
