@@ -2,7 +2,7 @@
 
 本项目所有值得记录的变更都写在这里。格式约定：每条目回答两个问题——**改了什么**、**为什么这么改（决策理由）**。
 
-## [Unreleased] - v0.4.1 patch candidate
+## [0.4.1] - 2026-08-15
 
 compatibility / release-hardening patch：第一轮修四处已确认问题（无架构变更）；第二轮追加 doctor 宿主对齐与 A/B 试点回流修复，其中包含一个 schema 小增补（`typography.mono` 可选角色）与 token_lint 边界修正。
 
