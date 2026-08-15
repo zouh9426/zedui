@@ -23,7 +23,10 @@ arbitrary-value spacing classes (``p-[17px]``, ``mt-[-8px]``, ``-m-[4px]``,
 ``inset-x-[4px]``, ...) are flagged; non-spacing arbitrary classes
 (``w-[300px]``, ``text-[17px]``, ``leading-[1.1]``, ``min-h-[100dvh]``,
 ``bg-[#fff]``, ...) and standard staircase classes (``p-4``, ``mt-2``) are
-not.
+not. Tailwind positioning prefixes (``top-[...]``, ``left-[...]``,
+``inset-[...]``, ``inset-x-[...]``, ``inset-y-[...]``) follow the same rule
+as their CSS counterparts: absolute lengths are flagged, percentages
+(``top-[50%]``) are placement and stay clean.
 
 Inline exemption: a line whose raw text contains ``token-lint-ignore``
 (typically in a trailing comment, e.g. ``top: -20%; /* token-lint-ignore:
@@ -149,6 +152,12 @@ ARBITRARY_SPACING_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Tailwind positioning prefixes get the placement-not-spacing treatment:
+# percentages stay clean, absolute lengths are still flagged.
+TAILWIND_POSITION_PREFIXES = frozenset([
+    "inset-x", "inset-y", "inset", "top", "right", "bottom", "left",
+])
+
 
 def _strip_var_refs(value):
     """Return *value* with every ``var(...)`` reference removed.
@@ -273,8 +282,13 @@ def _tailwind_findings(line):
     """
     for tok in line.split():
         m = ARBITRARY_SPACING_RE.search(tok)
-        if m and _has_nonzero_length_literal(m.group(1)):
-            yield m.group(0)
+        if m:
+            prefix = m.group(0).lstrip("-").split("-[")[0].lower()
+            pattern = (LENGTH_LITERAL_NO_PCT_RE
+                       if prefix in TAILWIND_POSITION_PREFIXES
+                       else LENGTH_LITERAL_RE)
+            if _has_nonzero_length_literal(m.group(1), pattern):
+                yield m.group(0)
 
 
 def lint_text(text):

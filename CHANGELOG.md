@@ -6,6 +6,11 @@
 
 compatibility / release-hardening patch：第一轮修四处已确认问题（无架构变更）；第二轮追加 doctor 宿主对齐与 A/B 试点回流修复，其中包含一个 schema 小增补（`typography.mono` 可选角色）与 token_lint 边界修正。
 
+### 第三轮（验收打回修复）
+
+- **authoritative HOME 的"来源"语义修正（文档层）**：第二轮的 SKILL.md/SETUP 把"agent 按候选目录扫描出的路径"直接称作"宿主实际选定的路径"——但目录扫描本身就是和 doctor 自动发现同源的推断，这么写等于把推断误称成事实，正是 --skill-home 要防的那类假安全感。现两档区分：宿主主动暴露的加载注册表（会话 skill 列表等）才是真 authoritative，显式传入；扫描推断的路径可传但需如实认识其性质，拿不准就让 doctor 无参自动发现、以 `[auto-discovered]` 标注为准。SKILL.md 环境探测节与 SETUP 双语 Step 5 第 4 项同步修正，doctor 代码行为不变（它本来就不判断来源真伪，只如实标注）。理由：机制修对了但文档把语义说过头，使用者照样会误信。
+- **token_lint 的 Tailwind 定位类百分比误报**：`top-[50%]` / `inset-x-[10%]` 等 Tailwind 定位 arbitrary 类此前仍按全量正则抓百分比，与第二轮刚确立的"定位百分比是摆放不是间距"规则自相矛盾。现 Tailwind 定位前缀（top/right/bottom/left/inset/inset-x/inset-y）与 CSS 定位属性同规则：绝对长度照抓、百分比放行；间距类百分比（`p-[5%]`）照抓。新增 3 条回归测试。理由：规则刚立就在相邻路径上自相矛盾，是最伤门禁可信度的一类残留。
+
 ### 第二轮追加（doctor 宿主对齐 + A/B 试点回流）
 
 - **doctor 支持显式 authoritative Skill HOME（宿主对齐，防"检了 A 副本、宿主跑 B 副本"的假绿）**：新增 `--skill-home <skill>=<path>`（可重复、可只传部分）。显式路径优先于自动发现，且 fail-closed 校验（路径存在 / 是目录 / 含 SKILL.md / frontmatter `name:` 匹配），无效即 critical failure、**不退回自动发现**——显式路径的含义是"宿主实际加载这份"，它坏了却偷跑另一份等于再造假绿。未显式指定的 skill 继续自动发现。理由：doctor 自己硬编码的候选目录顺序不可能精确复制 Kimi Code / Claude Code / Codex 各自（且会演化的）loader precedence；编排层本来就先解析五个 HOME，把解析结果传进来才能让 doctor 体检"宿主真正会用的那一份"。

@@ -172,6 +172,23 @@ class TokenLintInlineIgnoreTests(unittest.TestCase):
         self.assertTrue(tl.lint_text(".a { padding: 5%; }"))
         self.assertTrue(tl.lint_text(".a { margin-block: 10%; }"))
 
+    def test_tailwind_positioning_percentage_clean(self):
+        # placement, not spacing — same rule as CSS positioning properties
+        for case in ('<div class="top-[50%]"></div>',
+                     '<div class="left-[50%] -translate-x-1/2"></div>',
+                     '<div class="inset-x-[10%]"></div>',
+                     '<div class="-top-[8%]"></div>'):
+            self.assertFalse(tl.lint_text(case),
+                             "expected clean for %r" % case)
+
+    def test_tailwind_positioning_absolute_still_flagged(self):
+        self.assertTrue(tl.lint_text('<div class="top-[68px]"></div>'))
+        self.assertTrue(tl.lint_text('<div class="inset-x-[4px]"></div>'))
+
+    def test_tailwind_spacing_percentage_still_flagged(self):
+        self.assertTrue(tl.lint_text('<div class="p-[5%]"></div>'))
+        self.assertTrue(tl.lint_text('<div class="mt-[10%]"></div>'))
+
 
 class TokenLintCliTests(unittest.TestCase):
     """Exit-code contract and file-level behaviors (0 clean / 1 / 2)."""

@@ -54,9 +54,9 @@ Phase 2 审查：context 引导 → critique（A/B 隔离评审）→ audit → 
 | `$IMP_HOME` | `impeccable` | context 引导 / detector / hook-admin / critique / audit |
 | `$ZEDUI_HOME` | `zedui`（本 skill 自身） | `scripts/uupm_to_design.py` 桥接脚本、`token_lint.py`、`doctor.py` |
 
-解析结果**显式告诉用户一行**（哪个 skill 在哪个路径）。任何一个解析不到：**告知用户缺哪个、请参照项目 README/SETUP 安装**——缺的 skill 在当前任务链上（如要做产品页却缺 interface-design）就停下来等安装；当前任务用不到的（如纯营销项目缺 interface-design）记录后可继续，但路由到它之前必须装好。不要静默跳过或瞎猜路径。
+解析结果**显式告诉用户一行**（哪个 skill 在哪个路径、来源是什么）。**来源分两档，如实区分**：① 宿主主动暴露的加载注册表（会话开始的 skill 列表、宿主自带的 skills 管理命令等，带真实路径）——这才是真正的 authoritative；② 按候选目录扫描推断——这只是"按通用约定的最佳推断"，和 doctor 的自动发现同源，不代表宿主一定加载这份。任何一个解析不到：**告知用户缺哪个、请参照项目 README/SETUP 安装**——缺的 skill 在当前任务链上（如要做产品页却缺 interface-design）就停下来等安装；当前任务用不到的（如纯营销项目缺 interface-design）记录后可继续，但路由到它之前必须装好。不要静默跳过或瞎猜路径。
 
-装好后做全链路体检。**你已解析出的五个 HOME 是宿主实际选定的路径——显式传给 doctor，不要让它再猜一遍**：
+装好后做全链路体检。① 来源的路径显式传给 doctor，让它体检宿主实际加载的那五份；② 来源的路径也可以传，但要认识到它本身仍是推断——拿不准时让 doctor 无参自动发现即可，输出会如实标注 `[auto-discovered]`：
 
 ```bash
 python3 "$ZEDUI_HOME/scripts/doctor.py" \
