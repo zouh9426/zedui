@@ -4,9 +4,15 @@
 Impeccable's design-system detector compares font/color/radius/font-size
 against DESIGN.md, but NOT spacing: ``padding: 17px`` is never flagged
 upstream. This script closes that gap. It scans CSS declarations of
-spacing-like properties — margin/padding/gap/inset (physical *and* logical
-directional forms), plus top/right/bottom/left — and reports any value that
-carries a length literal (17px, 1.5rem, 50%, ...) outside a var() reference.
+spacing-like properties — margin/padding/gap (physical *and* logical
+directional forms) — and reports any value that carries a length literal
+(17px, 1.5rem, 50%, ...) outside a var() reference. Positioning properties
+(inset and its logical forms, top/right/bottom/left) are also scanned, but
+only for ABSOLUTE length literals: percentages there are almost always
+component-internal placement (``top: 50%`` centering, decorative glows at
+``top: -20%``), not spacing rhythm — flagging them produced forced, worse
+rewrites (measured in the 2026-08 A/B pilot). ``padding: 5%`` on a spacing
+property is still flagged.
 ``var(...)`` references are stripped whole (nested parens handled with a
 simple balance count) before the remaining value is tokenized, so
 ``padding: var(--space-sm) 17px`` and ``gap: calc(var(--space-md) + 3px)``
@@ -18,6 +24,13 @@ arbitrary-value spacing classes (``p-[17px]``, ``mt-[-8px]``, ``-m-[4px]``,
 (``w-[300px]``, ``text-[17px]``, ``leading-[1.1]``, ``min-h-[100dvh]``,
 ``bg-[#fff]``, ...) and standard staircase classes (``p-4``, ``mt-2``) are
 not.
+
+Inline exemption: a line whose raw text contains ``token-lint-ignore``
+(typically in a trailing comment, e.g. ``top: -20%; /* token-lint-ignore:
+decorative glow placement */``) is skipped entirely — this is the mechanical
+outlet for dispositioned findings, so the gate's exit code stays meaningful
+(0 = clean, 1 = undispositioned findings). Exemptions are visible in source
+and auditable by grep, unlike out-of-band config.
 
 The token definition layer is exempt: a file whose header carries the
 "GENERATED FILE — DO NOT EDIT BY HAND" marker (tokens.css and friends) is
@@ -71,20 +84,29 @@ SPACING_PROPERTIES = frozenset([
     "padding-inline", "padding-inline-start", "padding-inline-end",
     "padding-block", "padding-block-start", "padding-block-end",
     "gap", "row-gap", "column-gap",
+])
+
+# Positioning properties: scanned too, but only absolute length literals are
+# findings — percentages here are placement, not spacing rhythm.
+POSITION_PROPERTIES = frozenset([
     "inset", "inset-top", "inset-right", "inset-bottom", "inset-left",
     "inset-inline", "inset-inline-start", "inset-inline-end",
     "inset-block", "inset-block-start", "inset-block-end",
     "top", "right", "bottom", "left",
 ])
 
+# A line carrying this marker in its raw text is skipped entirely (inline
+# exemption for dispositioned findings; auditable by grep).
+IGNORE_MARKER = "token-lint-ignore"
+
 # A length literal: optional sign, integer or decimal digits, a CSS unit
 # (modern viewport units included: dvh/dvw/svh/svw/lvh/lvw/vmin/vmax).
 # Group 1 captures the numeric part (so zero literals can be exempted).
-LENGTH_LITERAL_RE = re.compile(
-    r"(?<![\w.-])(-?(?:\d+(?:\.\d*)?|\.\d+))"
-    r"(?:px|rem|em|dvh|dvw|svh|svw|lvh|lvw|vmin|vmax|vh|vw|%)",
-    re.IGNORECASE,
-)
+_LENGTH_BODY = (r"(?<![\w.-])(-?(?:\d+(?:\.\d*)?|\.\d+))"
+                r"(?:px|rem|em|dvh|dvw|svh|svw|lvh|lvw|vmin|vmax|vh|vw")
+LENGTH_LITERAL_RE = re.compile(_LENGTH_BODY + r"|%)", re.IGNORECASE)
+# Positioning-property variant: no % — percentages there are placement.
+LENGTH_LITERAL_NO_PCT_RE = re.compile(_LENGTH_BODY + r")", re.IGNORECASE)
 
 # A bare number with no unit at all (React inline styles: `padding: 17`).
 BARE_NUMBER_RE = re.compile(r"-?(?:\d+(?:\.\d*)?|\.\d+)")
@@ -170,9 +192,9 @@ def _literal_is_zero(match):
         return False
 
 
-def _has_nonzero_length_literal(comp):
+def _has_nonzero_length_literal(comp, pattern=LENGTH_LITERAL_RE):
     """True when *comp* contains a length literal whose value is not zero."""
-    for m in LENGTH_LITERAL_RE.finditer(comp):
+    for m in pattern.finditer(comp):
         if not _literal_is_zero(m):
             return True
     return False
@@ -188,7 +210,7 @@ def _is_nonzero_bare_number(comp):
         return False
 
 
-def _token_is_bad(comp):
+def _token_is_bad(comp, pattern=LENGTH_LITERAL_RE):
     """True when a single value token carries a flaggable literal."""
     comp = _strip_quotes(comp)
     if not comp:
@@ -197,10 +219,10 @@ def _token_is_bad(comp):
         return False
     if _is_nonzero_bare_number(comp):
         return True
-    return _has_nonzero_length_literal(comp)
+    return _has_nonzero_length_literal(comp, pattern)
 
 
-def _has_bad_literal(value):
+def _has_bad_literal(value, pattern=LENGTH_LITERAL_RE):
     """True when the value carries a non-exempt spacing length literal.
 
     var(...) references are stripped whole first, so a pure-token value like
@@ -211,7 +233,7 @@ def _has_bad_literal(value):
     for comp in re.split(r"[\s,]+", stripped.strip()):
         if not comp:
             continue
-        if _token_is_bad(comp):
+        if _token_is_bad(comp, pattern):
             return True
     return False
 
@@ -258,13 +280,20 @@ def _tailwind_findings(line):
 def lint_text(text):
     """Return a list of (lineno, property, value) findings in the text."""
     findings = []
+    raw_lines = text.splitlines()
     for lineno, line in _iter_clean_lines(text):
+        if IGNORE_MARKER in raw_lines[lineno - 1]:
+            continue
         for m in DECL_RE.finditer(line):
             prop = m.group(1).lower()
-            if prop not in SPACING_PROPERTIES:
+            if prop in SPACING_PROPERTIES:
+                pattern = LENGTH_LITERAL_RE
+            elif prop in POSITION_PROPERTIES:
+                pattern = LENGTH_LITERAL_NO_PCT_RE
+            else:
                 continue
             value = m.group(2).strip()
-            if _has_bad_literal(value):
+            if _has_bad_literal(value, pattern):
                 findings.append((lineno, prop, value))
         for cls in _tailwind_findings(line):
             findings.append((lineno, "class", cls))

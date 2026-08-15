@@ -138,6 +138,41 @@ class TokenLintFalsePositiveTests(unittest.TestCase):
                              "expected clean for %r" % case)
 
 
+class TokenLintInlineIgnoreTests(unittest.TestCase):
+    """Inline exemption (token-lint-ignore) is the mechanical outlet for
+    dispositioned findings; positioning percentages are placement, not
+    spacing."""
+
+    def test_inline_ignore_suppresses_line(self):
+        src = (".a { top: -20%; /* token-lint-ignore: decorative glow */\n"
+               "     padding: 17px; /* token-lint-ignore: legacy, ticket X */\n"
+               "}\n")
+        self.assertFalse(tl.lint_text(src))
+
+    def test_ignore_marker_only_affects_its_own_line(self):
+        src = (".a { top: -20%; /* token-lint-ignore */\n"
+               "     margin: 17px;\n"
+               "}\n")
+        finds = tl.lint_text(src)
+        self.assertEqual(len(finds), 1)
+        self.assertEqual(finds[0][1], "margin")
+
+    def test_positioning_percentage_is_placement_not_spacing(self):
+        # A/B pilot false positives: decorative glows and centering
+        self.assertFalse(tl.lint_text(".glow { top: -20%; right: -10%; }"))
+        self.assertFalse(tl.lint_text(".knob { top: 50%; left: 50%; }"))
+        self.assertFalse(tl.lint_text(".a { inset-block: 10%; }"))
+
+    def test_positioning_absolute_length_still_flagged(self):
+        self.assertTrue(tl.lint_text(".nav-offset { top: 68px; }"))
+        self.assertTrue(tl.lint_text(".knob { top: 2px; left: 2px; }"))
+        self.assertTrue(tl.lint_text(".a { inset-inline-start: 3rem; }"))
+
+    def test_spacing_percentage_still_flagged(self):
+        self.assertTrue(tl.lint_text(".a { padding: 5%; }"))
+        self.assertTrue(tl.lint_text(".a { margin-block: 10%; }"))
+
+
 class TokenLintCliTests(unittest.TestCase):
     """Exit-code contract and file-level behaviors (0 clean / 1 / 2)."""
 

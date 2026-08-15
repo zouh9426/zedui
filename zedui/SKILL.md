@@ -37,7 +37,7 @@ Phase 2 审查：context 引导 → critique（A/B 隔离评审）→ audit → 
 
 候选技能目录（**项目级优先、先命中先用**：同一 skill 装在多处时按此顺序找到第一个匹配即停，避免误用全局旧副本）：
 
-- 当前项目内的 `.agents/skills/`（项目级安装，最优先）
+- 当前项目内的 `.agents/skills/`、`.kimi-code/skills/`、`.claude/skills/`（项目级安装，最优先）
 - `~/.agents/skills/`（通用约定）
 - `~/.kimi-code/skills/`（Kimi Code）
 - `~/.claude/skills/`（Claude Code）
@@ -54,7 +54,20 @@ Phase 2 审查：context 引导 → critique（A/B 隔离评审）→ audit → 
 | `$IMP_HOME` | `impeccable` | context 引导 / detector / hook-admin / critique / audit |
 | `$ZEDUI_HOME` | `zedui`（本 skill 自身） | `scripts/uupm_to_design.py` 桥接脚本、`token_lint.py`、`doctor.py` |
 
-解析结果**显式告诉用户一行**（哪个 skill 在哪个路径）。任何一个解析不到：**告知用户缺哪个、请参照项目 README/SETUP 安装**——缺的 skill 在当前任务链上（如要做产品页却缺 interface-design）就停下来等安装；当前任务用不到的（如纯营销项目缺 interface-design）记录后可继续，但路由到它之前必须装好。不要静默跳过或瞎猜路径。装好后用 `python3 "$ZEDUI_HOME/scripts/doctor.py"` 做一次全链路体检。
+解析结果**显式告诉用户一行**（哪个 skill 在哪个路径）。任何一个解析不到：**告知用户缺哪个、请参照项目 README/SETUP 安装**——缺的 skill 在当前任务链上（如要做产品页却缺 interface-design）就停下来等安装；当前任务用不到的（如纯营销项目缺 interface-design）记录后可继续，但路由到它之前必须装好。不要静默跳过或瞎猜路径。
+
+装好后做全链路体检。**你已解析出的五个 HOME 是宿主实际选定的路径——显式传给 doctor，不要让它再猜一遍**：
+
+```bash
+python3 "$ZEDUI_HOME/scripts/doctor.py" \
+  --skill-home zedui="$ZEDUI_HOME" --skill-home ui-ux-pro-max="$UUPM_HOME" \
+  --skill-home design-taste-frontend="$TASTE_HOME" \
+  --skill-home interface-design="$ID_HOME" --skill-home impeccable="$IMP_HOME"
+```
+
+doctor 无参数运行时也能自动发现（覆盖上面的候选目录），但**自动发现只是 fallback**：它不复制各宿主真实的 loader 优先级，多副本时它选的第一命中不一定是宿主实际加载的那份（输出里会以 `[explicit]` / `[auto-discovered]` 标注来源，多副本会警告）。显式路径无效时 doctor fail-closed，不会偷偷退回自动发现。
+
+**会话快照注意**：宿主注入的 skill 内容是会话开始时的快照——zedui 或上游 skill 更新后，**新开/重启会话**再依赖新行为，否则编排指令与磁盘真源可能不一致（2026-08 实测：同一会话内磁盘已 v0.4.x，注入的仍是旧版 Phase 2 顺序）。
 
 ---
 
@@ -124,6 +137,7 @@ python3 "$UUPM_HOME/scripts/search.py" "<产品类型> <行业> <风格关键词
 2. **中性墨色**：UUPM 色板为营销页优化，foreground 常是品牌色（蓝色文字）。产品页正文用品牌色会很难看——确认正文是否改用中性色，标题才用 foreground。
 3. **暗色 token**：UUPM JSON 只产出一套色值，明暗支持只是标注。项目要双模的话，当场补 `dark_*` 系列 token，否则 Taste 的双模强制会无 token 可用。
 4. **CJK 字体栈（中文/双语项目必须确认）**：UUPM 的字体库全是 Latin 字体，**不含 CJK 字形**——中文内容会静默回退到系统默认宋体/黑体，字体决策等于半失效，且 detector 完全测不出这种回退（它只看 font-family 声明）。中文项目必须把 fontFamily 写成栈：`"EB Garamond, Noto Serif SC"`（Latin 字体在前管西文与数字，CJK 字体在后管中文），Google Fonts URL 同步加上 CJK family。**字体相关 JSON 字段要四个一起改**：`heading` / `body` 的 fontFamily、`google_fonts_url`、`css_import`——只改前三个会让 URL / 导入与实际字体栈对不上。**且 `google_fonts_url` 要逐 family 核对**：UUPM 输出的 URL 可能含 heading/body 之外的字体（实测出现过 Cinzel 不属于任一），detector 的 `design-system-font` 比对 URL 时必报 finding——多余字体从 JSON 里清掉，别留进 URL。
+5. **等宽字体栈（代码密集型 UI 必须确认）**：页面里有代码块 / endpoint / API key / 日志等 mono 内容时，当场在 JSON 的 `typography` 里补 `mono` 字段（如 `"ui-monospace, SF Mono, SFMono-Regular, Menlo, Consolas, monospace"`）——桥接脚本会把它带进 frontmatter、正文和 tokens.css 的 `--font-mono`。不登记的话，detector 的 `design-system-font` 会把组件里的 mono 声明报成漂移，而 design-system-* 不许豁免，只能事后走 Phase 3 补规范（2026-08 A/B 试点实测发生）。
 
 **用户明确说可以了才进入 0.4。有任何修改就调整后重新确认。**
 
@@ -240,7 +254,7 @@ node "$IMP_HOME/scripts/detect.mjs" --json <目标文件或目录>
 - 同时会报约 60 条 slop/quality 规则（AI 味、排版等）；exit code 2 = 有发现。
 - `scripts/detect.mjs` 是上游当前公开入口（facade），`--json`/`--viewport` 等参数全兼容；它不存在时（旧版本）回退内部入口 `scripts/detector/detect-antipatterns.mjs`，再在 `$IMP_HOME` 内搜索实际位置（`hook-admin.mjs` 同理）。
 
-**检测边界（实测确认）**：`design-system-color` 只检查**属性声明处的字面值**（`color: #00C853` 会被抓）；CSS 自定义属性的定义行（`--accent: #xxx`）和 `var()` 引用**不检查**。而且实测**只抓部分属性位置的字面值**——`box-shadow` 值内、部分上下文会漏。另外它有颜色通道容差（±6）——与色板近似的未登记色会被判为色板内静默通过，临界色值需人工复核。**detector 清零后应人工补网**：`grep -nE "#[0-9a-fA-F]{3,8}|rgba?\("` 扫一遍源码，确认没有漏网的色值字面量再交付。
+**检测边界（实测确认）**：`design-system-color` 只检查**属性声明处的字面值**（`color: #00C853` 会被抓）；CSS 自定义属性的定义行（`--accent: #xxx`）和 `var()` 引用**不检查**。而且实测**只抓部分属性位置的字面值**——`box-shadow` 值内、部分上下文会漏。另外它有颜色通道容差（±6）——与色板近似的未登记色会被判为色板内静默通过，临界色值需人工复核。**detector 清零后应人工补网**：`grep -nE "#[0-9a-fA-F]{3,8}|rgba?\("` 扫一遍源码，确认没有漏网的色值字面量再交付。注意 exit code 2 = 有 finding，不是运行出错——脚本化处理时别当失败。
 
 **b) 间距字面值 lint（zedui 自补的兜底）**：上游 detector 的 design-system 比对**不覆盖 spacing**——`padding: 17px` 这类字面值不会成为 finding，"间距字面值必然被抓"是不成立的。用 zedui 自带的 token lint 兜底：
 
@@ -248,9 +262,9 @@ node "$IMP_HOME/scripts/detect.mjs" --json <目标文件或目录>
 python3 "$ZEDUI_HOME/scripts/token_lint.py" <目标文件或目录>
 ```
 
-规则：组件层样式里的 padding/margin/gap 等字面值必须引用 `var(--space-*)`；token 定义层（tokens.css 等生成物）豁免。
+规则：组件层样式里的 padding/margin/gap 字面值必须引用 `var(--space-*)`；定位属性（top/right/bottom/left/inset 系列）只抓绝对长度字面值——百分比定位（`top: 50%` 居中、装饰光晕的 `top: -20%`）是组件内部摆放，不是间距节奏，不报。已 disposition 的合法 finding 用行内注释豁免：在该行加 `/* token-lint-ignore: 理由 */` 即跳过该行（可 grep 审计）；token 定义层（tokens.css 等生成物）豁免。**目标是 exit 0 可信仰**：全绿 = 无未处置 finding，不靠口头记忆。
 
-**c) 浏览器引擎扫描 + 多端视口（有浏览器时必须跑）**：源码级 CLI 只看文本，**看不见计算样式**——间距挤压、实际对比度、触摸目标、CJK 字体回退全部漏检（试点项目漏过一个 padding 被层叠覆盖的 bug，用户肉眼抓到）。同一 CLI 传 URL 即自动启用浏览器引擎（注意 `engines/browser/detect-url.mjs` 是库不是入口，直接跑它什么都不扫）：
+**c) 浏览器引擎扫描 + 多端视口（有浏览器时必须跑）**：源码级 CLI 只看文本，**看不见计算样式**——间距挤压、实际对比度、触摸目标、CJK 字体回退全部漏检（试点项目漏过一个 padding 被层叠覆盖的 bug，用户肉眼抓到）。同一 CLI 传 URL 即自动启用浏览器引擎（注意 `engines/browser/detect-url.mjs` 是库不是入口，直接跑它什么都不扫）。**浏览器引擎扫全量 DOM，含 hidden 视图**（2026-08 实测：JS 切换的隐藏 tab/视图内的 kicker 也会上报）——覆盖更全是好事，但可见性相关规则在隐藏 DOM 上的 finding 需人工甄别，别误判成默认视图有问题。用法：
 
 ```bash
 # 首次准备：cd "$IMP_HOME" && PUPPETEER_SKIP_DOWNLOAD=1 npm i puppeteer
@@ -269,7 +283,7 @@ done
 
 截图人工审查的判断标准：布局是否按媒体查询坍缩为单列、有无横向滚动、文字是否溢出、触控目标是否 ≥44px。布局级的响应式打分由 2.2 的 `audit`（Responsive 维度：固定宽度/横向滚动/断点缺失/触达尺寸，0-4 分）负责。
 
-**d) 截图人工核查**：配合截图人工审查**关键接缝处的局部裁切**（不要只看缩略全图——局部间距问题在缩略图里不可见，实测教训）。**截图方式实测教训**：不要用 Chrome CLI 的 `--screenshot --window-size=390` 截移动端图——CLI 截图有最小窗宽（约 500px）伪影，390 的移动视口是假的。移动端截图必须用 puppeteer `setViewport` / CDP 设备模拟等真实模拟方式（2026-08-12 某生产项目实测：CLI 截图显示整页溢出 P0，真实模拟下无溢出——以真实模拟结果为准）。
+**d) 截图人工核查**：配合截图人工审查**关键接缝处的局部裁切**（不要只看缩略全图——局部间距问题在缩略图里不可见，实测教训）。**截图方式实测教训两条**：① 不要用 Chrome CLI 的 `--screenshot --window-size=390` 截移动端图——CLI 截图有最小窗宽（约 500px）伪影，390 的移动视口是假的。移动端截图必须用 puppeteer `setViewport` / CDP 设备模拟等真实模拟方式（2026-08-12 某生产项目实测：CLI 截图显示整页溢出 P0，真实模拟下无溢出——以真实模拟结果为准）。② fullPage 截图**不会触发滚动**——用 IntersectionObserver 做 scroll-reveal 的页面，截出来折叠线以下全空白（不是 bug，是伪影），且 position:sticky/fixed 元素会在长图里重复出现。正确姿势：先用 page.evaluate 模拟滚动全程触发 IO，再截 fullPage（2026-08 A/B 试点实测误报过一次大回归）。
 
 ### 2.4 豁免（误报处置）
 
@@ -324,7 +338,7 @@ detector 的通用 slop 规则**不认识 DESIGN.md**——被 DESIGN.md 批准�
 | UUPM 知识库数据 | `$UUPM_HOME/data/` |
 | 桥接脚本（UUPM JSON → DESIGN.md；DESIGN.md → 正文同步 + tokens.css） | `$ZEDUI_HOME/scripts/uupm_to_design.py` |
 | 间距/token 字面值 lint | `$ZEDUI_HOME/scripts/token_lint.py` |
-| 环境全链路体检 | `$ZEDUI_HOME/scripts/doctor.py` |
+| 环境全链路体检 | `$ZEDUI_HOME/scripts/doctor.py`（优先用 `--skill-home <skill>=<path>` 把五个已解析 HOME 显式传入；无参自动发现只是 fallback） |
 | Impeccable 上下文引导（每 session 一次） | `$IMP_HOME/scripts/context.mjs` |
 | Impeccable detector CLI（公开 facade，源码级 + 浏览器引擎共用） | `$IMP_HOME/scripts/detect.mjs`（旧版回退 `scripts/detector/detect-antipatterns.mjs`） |
 | Impeccable 豁免管理 | `$IMP_HOME/scripts/hook-admin.mjs` |

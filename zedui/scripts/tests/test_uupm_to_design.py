@@ -361,6 +361,72 @@ class TestCjkFontStack(unittest.TestCase):
             self.assertIn("--font-body: Inter, Noto Sans SC;", css_text)
 
 
+class TestMonoFontRole(unittest.TestCase):
+    """typography.mono is an optional but first-class role: it flows
+    JSON -> DESIGN.md frontmatter -> body generated block -> tokens.css, so
+    code-heavy UIs can register their monospace stack in the SSOT instead of
+    tripping design-system-font drift forever."""
+
+    MONO = "ui-monospace, SF Mono, SFMono-Regular, Menlo, Consolas, monospace"
+
+    def test_mono_string_flows_end_to_end(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ds = _full_ds()
+            ds["typography"]["mono"] = self.MONO
+            css = os.path.join(tmp, "tokens.css")
+            md = _gen_md(tmp, extra_args=["--tokens-css", css], ds=ds)
+            text = _read(md)
+            fm, body = _fm_and_body(text)
+            self.assertIn('fontFamily: "%s"' % self.MONO, fm)
+            self.assertIn("**Mono font**: %s" % self.MONO, body)
+            self.assertIn("--font-mono: %s;" % self.MONO, _read(css))
+
+    def test_mono_dict_form_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ds = _full_ds()
+            ds["typography"]["mono"] = {"fontFamily": self.MONO}
+            md = _gen_md(tmp, ds=ds)
+            self.assertIn('fontFamily: "%s"' % self.MONO, _read(md))
+
+    def test_from_design_hand_added_mono_syncs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            md = _gen_md(tmp)
+            text = _read(md)
+            self.assertNotIn("Mono font", text)
+            text = text.replace(
+                '    fontFamily: "Inter, Noto Sans SC"\n',
+                '    fontFamily: "Inter, Noto Sans SC"\n'
+                '  mono:\n'
+                '    fontFamily: "%s"\n' % self.MONO, 1)
+            _write(md, text)
+            css = os.path.join(tmp, "tokens.css")
+            rc, _so, se = run_script(["--from-design", md, "--tokens-css", css])
+            self.assertEqual(rc, 0, se)
+            self.assertIn("**Mono font**: %s" % self.MONO, _read(md))
+            self.assertIn("--font-mono: %s;" % self.MONO, _read(css))
+
+    def test_empty_mono_strict_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            md = _gen_md(tmp)
+            text = _read(md).replace(
+                '    fontFamily: "Inter, Noto Sans SC"\n',
+                '    fontFamily: "Inter, Noto Sans SC"\n'
+                '  mono:\n'
+                '    fontFamily: ""\n', 1)
+            _write(md, text)
+            css = os.path.join(tmp, "tokens.css")
+            rc, _so, se = run_script(["--from-design", md, "--tokens-css", css])
+            self.assertNotEqual(rc, 0)
+            self.assertIn("mono", se)
+
+    def test_no_mono_no_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            css = os.path.join(tmp, "tokens.css")
+            md = _gen_md(tmp, extra_args=["--tokens-css", css])
+            self.assertNotIn("mono", _read(md))
+            self.assertNotIn("--font-mono", _read(css))
+
+
 class TestQuotedKeyYamlBoundary(unittest.TestCase):
     """parse_design_frontmatter handles quoted keys, colons inside values,
     inline comments, and hex values that must not be clipped."""

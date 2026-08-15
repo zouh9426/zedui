@@ -41,6 +41,10 @@ outside the markers (style intent, strategy notes, ## Components) is
 human/agent-maintained and is never touched by this script. Heading/body font
 SIZES are not stored per role: they derive from scale.2xl / scale.base by
 convention, so a scale edit can never leave a stale duplicate behind.
+``typography.mono`` is an optional third font role for code-heavy UIs: when
+present (JSON string or ``{fontFamily: ...}``) it flows into the frontmatter,
+the body typography block, and ``--font-mono`` in tokens.css, so a monospace
+stack declared in component code has a registered home in the SSOT.
 """
 
 import argparse
@@ -163,6 +167,24 @@ def build_spacing_scale(scale):
         if val is not None and str(val).strip() != "":
             out[name] = str(val)
     return out
+
+
+def _mono_font(typo):
+    """Extract the monospace stack from a typography map.
+
+    Accepts both shapes: UUPM-style JSON (``mono`` as a plain string or as
+    ``{"fontFamily": ...}``) and parsed DESIGN.md frontmatter (``mono`` as a
+    nested ``fontFamily`` map). Returns a plain string or None. Mono is an
+    optional role — code-heavy UIs need it and the detector's
+    design-system-font rule requires every declared family to live in
+    DESIGN.md, so the bridge must be able to carry it end to end.
+    """
+    m = (typo or {}).get("mono")
+    if isinstance(m, dict):
+        m = m.get("fontFamily")
+    if m is None or not str(m).strip():
+        return None
+    return str(m).strip()
 
 
 # --------------------------------------------------------------------------
@@ -305,6 +327,8 @@ def validate_frontmatter_tokens(fm, strict=True):
         fm.get("rounded"),
         fm.get("spacing"),
     )
+    if isinstance(typo, dict) and "mono" in typo and _mono_font(typo) is None:
+        errors.append("typography.mono has no usable fontFamily")
     return ["frontmatter." + e for e in errors]
 
 
@@ -339,6 +363,10 @@ def build_frontmatter(ds, rounded_scale, type_scale, spacing_scale):
     lines.append("    fontFamily: %s" % _q(typo.get("heading")))
     lines.append("  body:")
     lines.append("    fontFamily: %s" % _q(typo.get("body")))
+    mono = _mono_font(typo)
+    if mono is not None:
+        lines.append("  mono:")
+        lines.append("    fontFamily: %s" % _q(mono))
     # NOTE: no fontSize here by design — heading/body sizes derive from
     # scale.2xl / scale.base by convention. Recording them again would be a
     # second copy of the same fact (stale after any scale edit).
@@ -398,10 +426,15 @@ def render_colors_block(colors):
     return lines
 
 
-def render_typography_block(heading_font, body_font, gf_url, css_import, type_scale):
+def render_typography_block(heading_font, body_font, gf_url, css_import, type_scale,
+                            mono_font=None):
     lines = [
         "**Heading font**: %s" % _s(heading_font),
         "**Body font**: %s" % _s(body_font),
+    ]
+    if mono_font is not None:
+        lines.append("**Mono font**: %s" % _s(mono_font))
+    lines += [
         "**Google Fonts URL**: %s" % _s(gf_url),
         "",
         "```css",
@@ -579,7 +612,7 @@ def build_body(ds, rounded_scale, type_scale, spacing_scale, mkt, prod, prod_lab
     typo_lines += _marked("typography", render_typography_block(
         typo.get("heading"), typo.get("body"),
         typo.get("google_fonts_url"), typo.get("css_import"),
-        type_scale))
+        type_scale, mono_font=_mono_font(typo)))
     typo_lines.append("")
     typo_lines.append("**Mood**: %s" % _s(typo.get("mood")))
     typo_lines.append("**Best for**: %s" % _s(typo.get("best_for")))
@@ -682,7 +715,7 @@ def _css_value(v):
 
 
 def build_tokens_css(colors, heading_font, body_font, type_scale, rounded_scale,
-                     spacing_scale, source_desc):
+                     spacing_scale, source_desc, mono_font=None):
     """Render the token layer as CSS custom properties on :root.
 
     Pure derivation: every value comes from the DESIGN.md frontmatter maps;
@@ -711,6 +744,8 @@ def build_tokens_css(colors, heading_font, body_font, type_scale, rounded_scale,
         lines.append("  --font-heading: %s;" % _css_value(heading_font))
     if _ok(body_font):
         lines.append("  --font-body: %s;" % _css_value(body_font))
+    if _ok(mono_font):
+        lines.append("  --font-mono: %s;" % _css_value(mono_font))
     for tname, tval in type_scale.items():
         if _ok(tval):
             lines.append("  --text-%s: %s;" % (_css_name_part(tname), _css_value(tval)))
@@ -950,7 +985,8 @@ def main(argv=None):
                     (typo.get("body") or {}).get("fontFamily"),
                     typo.get("google_fonts_url"),
                     typo.get("css_import"),
-                    typo["scale"]),
+                    typo["scale"],
+                    mono_font=_mono_font(typo)),
                 "spacing": render_spacing_block(fm["spacing"]),
                 "rounded": render_rounded_block(fm["rounded"]),
             }
@@ -963,6 +999,7 @@ def main(argv=None):
                 fm["rounded"],
                 fm["spacing"],
                 args.from_design,
+                mono_font=_mono_font(typo),
             )
         except ValueError as e:
             _fail(str(e))
@@ -1032,6 +1069,7 @@ def main(argv=None):
                 rounded_scale,
                 spacing_scale,
                 args.output,
+                mono_font=_mono_font(typo),
             )
     except ValueError as e:
         _fail(str(e))

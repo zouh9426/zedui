@@ -4,7 +4,18 @@
 
 ## [Unreleased] - v0.4.1 patch candidate
 
-compatibility / release-hardening patch：修四处已确认问题，无架构变更、无新功能。
+compatibility / release-hardening patch：第一轮修四处已确认问题（无架构变更）；第二轮追加 doctor 宿主对齐与 A/B 试点回流修复，其中包含一个 schema 小增补（`typography.mono` 可选角色）与 token_lint 边界修正。
+
+### 第二轮追加（doctor 宿主对齐 + A/B 试点回流）
+
+- **doctor 支持显式 authoritative Skill HOME（宿主对齐，防"检了 A 副本、宿主跑 B 副本"的假绿）**：新增 `--skill-home <skill>=<path>`（可重复、可只传部分）。显式路径优先于自动发现，且 fail-closed 校验（路径存在 / 是目录 / 含 SKILL.md / frontmatter `name:` 匹配），无效即 critical failure、**不退回自动发现**——显式路径的含义是"宿主实际加载这份"，它坏了却偷跑另一份等于再造假绿。未显式指定的 skill 继续自动发现。理由：doctor 自己硬编码的候选目录顺序不可能精确复制 Kimi Code / Claude Code / Codex 各自（且会演化的）loader precedence；编排层本来就先解析五个 HOME，把解析结果传进来才能让 doctor 体检"宿主真正会用的那一份"。
+- **自动发现补齐 project scope + 多副本文案诚实化**：候选目录新增 `<project>/.kimi-code/skills/` 和 `<project>/.claude/skills/`（项目级优先顺序保持）；解析输出标注来源（`[explicit]` / `[auto-discovered]`）；多副本 warning 改为明确声明"自动发现选的第一命中不保证等于宿主实际选择，请用 --skill-home 指定"。理由：fallback 可以方便，但不能让人误以为它等于宿主的真实选择。
+- **fake UUPM probe 测试补强**：测试树的 fake search.py 从"忽略 argv"改为断言 probe 真的传入了位置查询词 + `--design-system` + `--json`——doctor 以后误删这些参数时测试直接红，而不是假成功。
+- **DESIGN.md schema 补 mono 字体角色（SSOT 裂缝修复，A/B 试点实测驱动）**：代码密集型 UI 必然用等宽栈（代码块/endpoint/key/日志），但 schema 只有 heading/body 两个字体角色——detector 的 `design-system-font` 把未登记的 mono 栈报漂移，design-system-* 又不许豁免，生产者被迫在页面 `:root` 自建第二 token 定义点。现桥接脚本端到端支持 `typography.mono`（JSON 字符串或 `{fontFamily}` 形态均可）→ frontmatter → 正文 generated 块 → tokens.css 的 `--font-mono`；frontmatter 里 mono 存在但为空时 strict 重同步报错。SKILL.md 0.3 确认项新增第 5 条（mono 栈）。理由：唯一token定义层是铁律，铁律覆盖不到的合法需求只会逼出地下通道。
+- **token_lint 两个边界修正（A/B 试点实测驱动）**：① 新增行内豁免——行内注释含 `token-lint-ignore` 即跳过该行（可 grep 审计），此前已 disposition 的合法 finding 无机械出口，exit code 永远 1，"全绿"信号失真；② 定位属性（top/right/bottom/left/inset 系列）只抓绝对长度字面值，百分比不再报——`top: 50%` 居中、装饰光晕 `top: -20%` 是摆放不是间距节奏，此前会把生产者逼成"为过门禁改写等价怪写法"。间距属性上的百分比（`padding: 5%`）照抓。SKILL.md 2.3b 同步。
+- **SKILL.md 补四条实测记录**：① 宿主 skill 注入是会话快照，skill 更新后需新开会话（否则拿到旧工作流）；② 浏览器引擎扫全量 DOM 含 hidden 视图，可见性类 finding 需人工甄别；③ fullPage 截图不触发 IntersectionObserver（scroll-reveal 页面截出空白下半页）且 sticky 元素在长图中重复——先模拟滚动全程再截；④ detector exit 2 = 有 finding 而非出错（两个执行者都误判过）。SETUP 双语 Step 5 第 4 项改为显式 `--skill-home` 调用；README 双语各加一句说明。
+
+### 第一轮（2026-08-15 早些时候）
 
 - **doctor 的 UUPM 检查 fail-closed 化（假绿修复）**：此前 `ui-ux-pro-max` 的 SKILL.md 能解析、但 `$UUPM_HOME/scripts/search.py` 完全缺失时，[4/6] 只输出 warning 并以 "optional" 跳过真实契约探测——最终仍可 "All critical checks passed." 并 exit 0，而 ZedUI Phase 0 的核心链路必须调用 search.py，这等于把残缺安装判健康。现改为：标准路径存在则照旧真实 probe；标准路径不存在但在 `$UUPM_HOME` 内找到**唯一**候选时，输出 upstream path drift 的 warning 后用该脚本继续真实 probe；找到**多个**候选无法可靠判定入口时拒绝猜测、直接 critical failure；完全找不到任何 search.py 时 critical failure、doctor 返回非 0。理由：体检工具对核心依赖缺失放水，比没有体检更危险——它让"装完了"的确认失真。
 - **doctor 回归测试基础设施修正**：`test_doctor.py` 的 fake 完整 skill 树此前故意不提供 UUPM search.py，把"缺失只 warning"锁成了正常路径。现完整安装包含一个真正响应 `--design-system --json` probe 的 fake search.py（返回满足桥接契约的最小合法 JSON，不 mock probe 本身）；新增 4 条回归：标准路径 probe 成功 exit 0、完全无 search.py 必须 exit 1 且报 critical、唯一 fallback 候选 warning 后真实 probe 通过、多候选 ambiguity fail-closed。理由：测试锁错行为比没有测试更糟。
