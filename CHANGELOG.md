@@ -2,6 +2,10 @@
 
 本项目所有值得记录的变更都写在这里。格式约定：每条目回答两个问题——**改了什么**、**为什么这么改（决策理由）**。
 
+## [Unreleased] - 2026-08-17
+
+- **发布纪律修正：GitHub Release 只在 minor 版本创建**。AGENTS.md 迭代纪律第 2 条原口径"每个正式版本打 tag 并建 GitHub Release"导致 0.3.x 系列两天内连发 8 个 patch Release（0.3.0 与 0.3.1 仅隔 5 分钟），Release 被当成了 commit 用。改为：tag 纪律不变（每个正式版本照常打 tag），GitHub Release 只在 minor 版本（0.x.0）创建，patch 变更随下一个 minor 的 Release notes 汇总；紧急热修可例外，须在 CHANGELOG 写明理由。理由：Release 会通知 watcher 并出现在订阅 feed，patch 级噪音对关注者无价值；tag 已足够承担版本快照标记职责。
+
 ## [0.4.1] - 2026-08-15
 
 compatibility / release-hardening patch：第一轮修四处已确认问题（无架构变更）；第二轮追加 doctor 宿主对齐与 A/B 试点回流修复，其中包含一个 schema 小增补（`typography.mono` 可选角色）与 token_lint 边界修正；第三/四轮为验收打回修复与发布后审计收尾（tag 定版时一并并入）。
